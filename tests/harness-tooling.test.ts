@@ -84,6 +84,32 @@ describe("harness direct workflow tools", () => {
     }
   });
 
+  test("Gemini MCP server responds over stdio with the shared workflow tools", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-gemini-mcp-"));
+    roots.push(projectRoot);
+    const client = new Client({ name: "agent-workflow-kit-test", version: "0.0.0" });
+    const transport = new StdioClientTransport({
+      command: "bun",
+      args: ["./mcp-server.ts"],
+      cwd: join(repoRoot, "plugins/gemini-workflow-kit"),
+    });
+
+    await client.connect(transport);
+    try {
+      const result = await client.callTool({
+        name: "workflow_run",
+        arguments: { workflow: "no-write-probe", projectRoot },
+      });
+      const content = result.content as Array<{ text?: string }> | undefined;
+      const firstContent = content?.[0];
+      const payload = firstContent && "text" in firstContent ? JSON.parse(String(firstContent.text)) : undefined;
+
+      expect(payload).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
+    } finally {
+      await client.close();
+    }
+  });
+
   test("Pi extension registers workflow commands and tools against the host API", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-pi-tools-"));
     roots.push(projectRoot);

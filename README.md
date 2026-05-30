@@ -17,6 +17,7 @@ Supported implementation packs:
 Shared runtime package:
 
 - `packages/core`
+- `packages/mcp`
 - `createWorkflowCommandService()` for CLI, MCP, and extension adapters
 
 Current parity contract:

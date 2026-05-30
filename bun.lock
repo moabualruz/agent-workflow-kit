@@ -27,6 +27,14 @@
       "name": "@agent-workflow-kit/core",
       "version": "0.0.0",
     },
+    "packages/mcp": {
+      "name": "@agent-workflow-kit/mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@modelcontextprotocol/sdk": "1.29.0",
+        "zod": "4.4.3",
+      },
+    },
     "plugins/gemini-workflow-kit": {
       "name": "gemini-workflow-kit",
       "version": "0.0.0",
@@ -51,6 +59,8 @@
     "@agent-workflow-kit/cli": ["@agent-workflow-kit/cli@workspace:packages/cli"],
 
     "@agent-workflow-kit/core": ["@agent-workflow-kit/core@workspace:packages/core"],
+
+    "@agent-workflow-kit/mcp": ["@agent-workflow-kit/mcp@workspace:packages/mcp"],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.91.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw=="],
 

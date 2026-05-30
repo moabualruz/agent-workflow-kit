@@ -4,8 +4,8 @@
   "description": "Workflow orchestration commands for Gemini CLI.",
   "mcpServers": {
     "agent-workflow-kit": {
-      "command": "node",
-      "args": ["./mcp-server.js"]
+      "command": "bun",
+      "args": ["./mcp-server.ts"]
     }
   }
 }
