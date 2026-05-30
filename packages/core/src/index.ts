@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type RunStatus = "running" | "completed" | "failed" | "stopped";
 
@@ -268,10 +269,9 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
       });
     },
 
-    runSavedWorkflow(name: string): Promise<WorkflowRun> {
+    async runSavedWorkflow(name: string): Promise<WorkflowRun> {
       const workflowName = requireText(name, "workflow-run requires workflow name");
-      const script = builtInWorkflows.get(workflowName);
-      if (!script) throw new Error(`Unknown workflow: ${workflowName}`);
+      const script = await resolveWorkflowScript(options.projectRoot, workflowName);
       return runtime.run({ name: workflowName, script });
     },
 
@@ -281,6 +281,10 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
 
     listRuns(): WorkflowRun[] {
       return store.listRuns();
+    },
+
+    eventsFor(runId: string): WorkflowEvent[] {
+      return store.eventsFor(requireText(runId, "workflow-events requires run id"));
     },
 
     resumeRun(runId: string): WorkflowRun {
@@ -351,6 +355,36 @@ const builtInWorkflows = new Map<string, WorkflowScript>([
     },
   ],
 ]);
+
+async function resolveWorkflowScript(projectRoot: string, workflowName: string): Promise<WorkflowScript> {
+  assertWorkflowName(workflowName);
+  const workflowPath = findWorkflowFile(projectRoot, workflowName);
+  if (workflowPath) return loadWorkflowScript(workflowPath);
+
+  const builtIn = builtInWorkflows.get(workflowName);
+  if (builtIn) return builtIn;
+
+  throw new Error(`Unknown workflow: ${workflowName}`);
+}
+
+function findWorkflowFile(projectRoot: string, workflowName: string): string | undefined {
+  const candidates = [
+    join(projectRoot, ".agent-workflow-kit", "workflows", `${workflowName}.js`),
+    join(projectRoot, ".claude", "workflows", `${workflowName}.js`),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+async function loadWorkflowScript(workflowPath: string): Promise<WorkflowScript> {
+  const module = await import(pathToFileURL(workflowPath).href);
+  const script = module.default ?? module.workflow;
+  if (typeof script !== "function") throw new Error(`Saved workflow must export a function: ${workflowPath}`);
+  return script as WorkflowScript;
+}
+
+function assertWorkflowName(workflowName: string): void {
+  if (!/^[a-zA-Z0-9._-]+$/.test(workflowName)) throw new Error(`Invalid workflow name: ${workflowName}`);
+}
 
 function createContext(
   runId: string,

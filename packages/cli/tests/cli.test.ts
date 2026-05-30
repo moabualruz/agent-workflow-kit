@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +60,31 @@ describe("agent-workflow-kit cli", () => {
     }));
     expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("permission:denied");
     expect(readFileSync(payload.artifacts.runJson, "utf8")).toContain("\"status\": \"failed\"");
+  });
+
+  test("workflow-run executes project saved workflow files", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "project-saved.js"), `
+export default function ({ phase, log }) {
+  phase("CLI Saved File");
+  log("cli saved workflow entered");
+  return { source: "cli-project" };
+}
+`);
+
+    const result = await runCli(["workflow-run", "project-saved", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toEqual(expect.objectContaining({
+      name: "project-saved",
+      status: "completed",
+      result: { source: "cli-project" },
+    }));
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("CLI Saved File");
   });
 
   test("reads run status from persisted state", async () => {

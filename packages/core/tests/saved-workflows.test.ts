@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createMemoryWorkflowRegistry, type WorkflowScript } from "../src/index";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createMemoryWorkflowRegistry, createWorkflowCommandService, type WorkflowScript } from "../src/index";
 
 describe("saved workflow registry", () => {
   test("resolves saved workflow names without exposing project-specific paths", async () => {
@@ -21,5 +24,44 @@ describe("saved workflow registry", () => {
     registry.save({ scope: "project", name: "same-name", script: async () => ({ source: "project" }) });
 
     expect(registry.resolve({ name: "same-name" }).scope).toBe("project");
+  });
+
+  test("command service runs project saved workflow files", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-saved-workflows-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "project-saved.js"), `
+export default async function ({ phase, log, agent }) {
+  phase("Saved File");
+  log("project saved workflow entered");
+  const result = await agent("project saved agent", { model: "harness/saved-worker" });
+  return { source: "project", result };
+}
+`);
+      const service = createWorkflowCommandService({
+        projectRoot,
+        agent: async (_prompt, options) => ({ ok: true, model: options?.model }),
+      });
+
+      const run = await service.runSavedWorkflow("project-saved");
+      const events = service.eventsFor(run.runId);
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "project-saved",
+        status: "completed",
+        result: { source: "project", result: { ok: true, model: "harness/saved-worker" } },
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "phase",
+        title: "Saved File",
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "agent:start",
+        model: "harness/saved-worker",
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 });
