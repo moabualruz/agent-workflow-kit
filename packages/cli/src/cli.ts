@@ -1,9 +1,7 @@
 #!/usr/bin/env bun
 
 import {
-  createFileStore,
-  createWorkflowRuntime,
-  type WorkflowScript,
+  createWorkflowCommandService,
 } from "@agent-workflow-kit/core";
 
 type ParsedArgs = {
@@ -13,17 +11,6 @@ type ParsedArgs = {
   json: boolean;
 };
 
-const workflows = new Map<string, WorkflowScript>([
-  [
-    "no-write-probe",
-    async ({ phase, agent, log }) => {
-      phase("Probe");
-      log("no-write probe entered");
-      return agent("Return exact JSON {\"ok\":true}");
-    },
-  ],
-]);
-
 main(process.argv.slice(2)).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
@@ -31,84 +18,50 @@ main(process.argv.slice(2)).catch((error) => {
 
 async function main(argv: string[]) {
   const args = parseArgs(argv);
-  const store = createFileStore({ projectRoot: args.projectRoot });
+  const service = createWorkflowCommandService({ projectRoot: args.projectRoot });
 
   switch (args.command) {
     case "workflow": {
       const task = args.positional.join(" ").trim();
-      if (!task) throw new Error("workflow requires task text");
-      const runtime = createWorkflowRuntime({
-        store,
-        agent: async () => ({ ok: true }),
-      });
-      const run = await runtime.run({
-        name: "workflow",
-        script: async ({ phase, log }) => {
-          phase("Workflow");
-          log(`task: ${task}`);
-          return { ok: true, task };
-        },
-      });
+      const run = await service.runAdHocWorkflow(task);
       print(run, args.json);
       return;
     }
 
     case "workflow-run": {
       const name = args.positional[0];
-      if (!name) throw new Error("workflow-run requires workflow name");
-      const script = workflows.get(name);
-      if (!script) throw new Error(`Unknown workflow: ${name}`);
-      const runtime = createWorkflowRuntime({
-        store,
-        agent: async () => ({ ok: true }),
-      });
-      const run = await runtime.run({ name, script });
+      const run = await service.runSavedWorkflow(name ?? "");
       print(run, args.json);
       return;
     }
 
     case "workflow-status": {
       const runId = args.positional[0];
-      if (!runId) throw new Error("workflow-status requires run id");
-      const run = store.getRun(runId);
+      const run = service.getRun(runId ?? "");
       print(run, args.json);
       return;
     }
 
     case "workflows": {
-      print(store.listRuns(), args.json);
+      print(service.listRuns(), args.json);
       return;
     }
 
     case "workflow-resume": {
       const runId = args.positional[0];
-      if (!runId) throw new Error("workflow-resume requires run id");
-      print(store.resume(runId), args.json);
+      print(service.resumeRun(runId ?? ""), args.json);
       return;
     }
 
     case "workflow-stop": {
       const runId = args.positional[0];
-      if (!runId) throw new Error("workflow-stop requires run id");
-      print(store.stop(runId), args.json);
+      print(service.stopRun(runId ?? ""), args.json);
       return;
     }
 
     case "deep-research": {
       const question = args.positional.join(" ").trim();
-      if (!question) throw new Error("deep-research requires question text");
-      const runtime = createWorkflowRuntime({
-        store,
-        agent: async () => ({ ok: true }),
-      });
-      const run = await runtime.run({
-        name: "deep-research",
-        script: async ({ phase, log }) => {
-          phase("Research");
-          log(`question: ${question}`);
-          return { ok: true, question };
-        },
-      });
+      const run = await service.runDeepResearch(question);
       print(run, args.json);
       return;
     }

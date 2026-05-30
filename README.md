@@ -8,15 +8,16 @@ Claude Code already has native Workflows. This repo uses Claude only as the refe
 
 Supported implementation packs:
 
-- Codex: `plugins/codex-workflow-kit`
+- Codex: `plugins/codex-workflow-kit` with MCP tools
 - Gemini CLI: `plugins/gemini-workflow-kit`
 - OpenCode: `plugins/opencode-workflow-kit`
 - Grok Build: `plugins/grok-workflow-kit`
-- Pi: `plugins/pi-workflow-kit`
+- Pi: `plugins/pi-workflow-kit` with registered commands/tools
 
 Shared runtime package:
 
 - `packages/core`
+- `createWorkflowCommandService()` for CLI, MCP, and extension adapters
 
 Current parity contract:
 

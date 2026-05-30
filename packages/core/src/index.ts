@@ -69,6 +69,12 @@ export type RunRequest = {
   script: WorkflowScript;
 };
 
+export type WorkflowCommandServiceOptions = {
+  projectRoot: string;
+  agent?: AgentFunction;
+};
+
+export type WorkflowCommandService = ReturnType<typeof createWorkflowCommandService>;
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
 export type FileStore = ReturnType<typeof createFileStore>;
 
@@ -230,6 +236,63 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
   };
 }
 
+export function createWorkflowCommandService(options: WorkflowCommandServiceOptions) {
+  const store = createFileStore({ projectRoot: options.projectRoot });
+  const runtime = createWorkflowRuntime({
+    store,
+    agent: options.agent ?? (async () => ({ ok: true })),
+  });
+
+  return {
+    runAdHocWorkflow(task: string): Promise<WorkflowRun> {
+      const normalizedTask = requireText(task, "workflow requires task text");
+      return runtime.run({
+        name: "workflow",
+        script: async ({ phase, log }) => {
+          phase("Workflow");
+          log(`task: ${normalizedTask}`);
+          return { ok: true, task: normalizedTask };
+        },
+      });
+    },
+
+    runSavedWorkflow(name: string): Promise<WorkflowRun> {
+      const workflowName = requireText(name, "workflow-run requires workflow name");
+      const script = builtInWorkflows.get(workflowName);
+      if (!script) throw new Error(`Unknown workflow: ${workflowName}`);
+      return runtime.run({ name: workflowName, script });
+    },
+
+    getRun(runId: string): WorkflowRun {
+      return store.getRun(requireText(runId, "workflow-status requires run id"));
+    },
+
+    listRuns(): WorkflowRun[] {
+      return store.listRuns();
+    },
+
+    resumeRun(runId: string): WorkflowRun {
+      return store.resume(requireText(runId, "workflow-resume requires run id"));
+    },
+
+    stopRun(runId: string): WorkflowRun {
+      return store.stop(requireText(runId, "workflow-stop requires run id"));
+    },
+
+    runDeepResearch(question: string): Promise<WorkflowRun> {
+      const normalizedQuestion = requireText(question, "deep-research requires question text");
+      return runtime.run({
+        name: "deep-research",
+        script: async ({ phase, log }) => {
+          phase("Research");
+          log(`question: ${normalizedQuestion}`);
+          return { ok: true, question: normalizedQuestion };
+        },
+      });
+    },
+  };
+}
+
 export const denyDynamicWorkflowPolicy: PermissionPolicy = {
   authorizeDynamicWorkflow: () => ({
     allowed: false,
@@ -265,6 +328,17 @@ export function createMemoryWorkflowRegistry() {
     },
   };
 }
+
+const builtInWorkflows = new Map<string, WorkflowScript>([
+  [
+    "no-write-probe",
+    async ({ phase, agent, log }) => {
+      phase("Probe");
+      log("no-write probe entered");
+      return agent("Return exact JSON {\"ok\":true}");
+    },
+  ],
+]);
 
 function createContext(
   runId: string,
@@ -356,4 +430,10 @@ function readRun(runsRoot: string, runId: string): WorkflowRun {
 function appendEvent(runsRoot: string, event: WorkflowEvent): void {
   mkdirSync(runDir(runsRoot, event.runId), { recursive: true });
   appendFileSync(join(runDir(runsRoot, event.runId), "events.jsonl"), `${JSON.stringify(event)}\n`);
+}
+
+function requireText(value: string, message: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(message);
+  return normalized;
 }

@@ -7,4 +7,4 @@ Native surfaces:
 - TypeScript extension entry under `extensions/`
 - `registerCommand` for user commands
 - `registerTool` for model-callable tools
-- `appendEntry` for Pi-native session persistence
+- `appendEntry` for Pi-native session persistence is planned after Pi host API smoke confirms the payload contract

@@ -1,3 +1,9 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "agent-workflow-kit": {
+      "command": "bun",
+      "args": ["./mcp/server.ts"],
+      "cwd": "."
+    }
+  }
 }
