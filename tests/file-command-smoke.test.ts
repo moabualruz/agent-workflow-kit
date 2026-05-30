@@ -11,8 +11,10 @@ afterEach(() => {
 });
 
 describe("file-command harness smoke blocks", () => {
-  test("OpenCode and Grok workflow-run commands execute the shared CLI path", async () => {
+  test("Codex, Gemini, OpenCode, and Grok workflow-run surfaces execute the shared CLI path", async () => {
     for (const file of [
+      "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/gemini-workflow-kit/commands/workflow-run.toml",
       "plugins/opencode-workflow-kit/commands/workflow-run.md",
       "plugins/grok-workflow-kit/commands/workflow-run.md",
     ]) {
