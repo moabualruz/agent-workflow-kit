@@ -70,6 +70,31 @@ describe("standalone repository contract", () => {
     }
   });
 
+  test("file-command harnesses expose every shared workflow command", () => {
+    const expected = [
+      "workflow",
+      "workflows",
+      "workflow-run",
+      "workflow-status",
+      "workflow-resume",
+      "workflow-stop",
+      "deep-research",
+    ];
+    const harnesses = [
+      { root: "plugins/gemini-workflow-kit/commands", extension: ".toml" },
+      { root: "plugins/opencode-workflow-kit/commands", extension: ".md" },
+      { root: "plugins/grok-workflow-kit/commands", extension: ".md" },
+    ];
+
+    for (const harness of harnesses) {
+      for (const command of expected) {
+        const file = join(repoRoot, harness.root, `${command}${harness.extension}`);
+        expect(existsSync(file), `${harness.root}/${command}${harness.extension}`).toBe(true);
+        expect(readFileSync(file, "utf8")).toContain(`agent-workflow-kit ${command}`);
+      }
+    }
+  });
+
   test("generic repo files do not mention downstream project names", () => {
     const offenders: string[] = [];
     for (const file of walk(repoRoot)) {

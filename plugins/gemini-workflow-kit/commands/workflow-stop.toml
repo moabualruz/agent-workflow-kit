@@ -1,0 +1,6 @@
+description = "Stop an Agent Workflow Kit workflow run"
+prompt = """
+Use the shared CLI fallback when MCP tools are unavailable:
+agent-workflow-kit workflow-stop <run-id> --json
+Return concise run status and artifact path only.
+"""

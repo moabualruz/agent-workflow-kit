@@ -1,0 +1,6 @@
+description = "Show Agent Workflow Kit workflow run status"
+prompt = """
+Use the shared CLI fallback when MCP tools are unavailable:
+agent-workflow-kit workflow-status <run-id> --json
+Return concise run status and artifact path only.
+"""

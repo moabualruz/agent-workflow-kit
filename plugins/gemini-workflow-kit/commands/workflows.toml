@@ -1,0 +1,6 @@
+description = "List Agent Workflow Kit workflow runs"
+prompt = """
+Use the shared CLI fallback when MCP tools are unavailable:
+agent-workflow-kit workflows --json
+Return concise run id, name, and status rows only.
+"""

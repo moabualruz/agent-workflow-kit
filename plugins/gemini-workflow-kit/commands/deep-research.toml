@@ -1,0 +1,6 @@
+description = "Run Agent Workflow Kit deep research"
+prompt = """
+Use the shared CLI fallback when MCP tools are unavailable:
+agent-workflow-kit deep-research "<question>" --json
+Return the run id, status, and artifact path only.
+"""
