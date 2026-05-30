@@ -34,6 +34,25 @@ async function main(argv: string[]) {
   const store = createFileStore({ projectRoot: args.projectRoot });
 
   switch (args.command) {
+    case "workflow": {
+      const task = args.positional.join(" ").trim();
+      if (!task) throw new Error("workflow requires task text");
+      const runtime = createWorkflowRuntime({
+        store,
+        agent: async () => ({ ok: true }),
+      });
+      const run = await runtime.run({
+        name: "workflow",
+        script: async ({ phase, log }) => {
+          phase("Workflow");
+          log(`task: ${task}`);
+          return { ok: true, task };
+        },
+      });
+      print(run, args.json);
+      return;
+    }
+
     case "workflow-run": {
       const name = args.positional[0];
       if (!name) throw new Error("workflow-run requires workflow name");
@@ -61,8 +80,41 @@ async function main(argv: string[]) {
       return;
     }
 
+    case "workflow-resume": {
+      const runId = args.positional[0];
+      if (!runId) throw new Error("workflow-resume requires run id");
+      print(store.resume(runId), args.json);
+      return;
+    }
+
+    case "workflow-stop": {
+      const runId = args.positional[0];
+      if (!runId) throw new Error("workflow-stop requires run id");
+      print(store.stop(runId), args.json);
+      return;
+    }
+
+    case "deep-research": {
+      const question = args.positional.join(" ").trim();
+      if (!question) throw new Error("deep-research requires question text");
+      const runtime = createWorkflowRuntime({
+        store,
+        agent: async () => ({ ok: true }),
+      });
+      const run = await runtime.run({
+        name: "deep-research",
+        script: async ({ phase, log }) => {
+          phase("Research");
+          log(`question: ${question}`);
+          return { ok: true, question };
+        },
+      });
+      print(run, args.json);
+      return;
+    }
+
     default:
-      throw new Error("Expected command: workflow-run, workflow-status, workflows");
+      throw new Error("Expected command: workflow, workflow-run, workflow-status, workflow-resume, workflow-stop, workflows, deep-research");
   }
 }
 

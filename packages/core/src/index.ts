@@ -80,6 +80,8 @@ export type WorkflowStore = {
   eventsFor: (runId: string) => WorkflowEvent[];
   getRun?: (runId: string) => WorkflowRun;
   listRuns?: () => WorkflowRun[];
+  stop?: (runId: string) => WorkflowRun;
+  resume?: (runId: string) => WorkflowRun;
 };
 
 export function createMemoryStore() {
@@ -182,6 +184,20 @@ export function createFileStore(options: { projectRoot: string }) {
         .filter((entry) => existsSync(join(runsRoot, entry, "run.json")))
         .map((entry) => readRun(runsRoot, entry))
         .sort((a, b) => a.runId.localeCompare(b.runId));
+    },
+
+    stop(runId: string): WorkflowRun {
+      const run = readRun(runsRoot, runId);
+      run.status = "stopped";
+      writeRun(runsRoot, run);
+      appendEvent(runsRoot, { runId, type: "run:stopped" });
+      return { ...run };
+    },
+
+    resume(runId: string): WorkflowRun {
+      const run = readRun(runsRoot, runId);
+      appendEvent(runsRoot, { runId, type: "run:resumed" });
+      return { ...run };
     },
   };
 }

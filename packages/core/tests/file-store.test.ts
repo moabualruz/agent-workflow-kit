@@ -57,4 +57,24 @@ describe("file workflow store", () => {
     expect(store.getRun(run.runId)).toEqual(expect.objectContaining({ status: "completed" }));
     expect(store.listRuns()).toContainEqual(expect.objectContaining({ runId: run.runId }));
   });
+
+  test("records stopped and resumed states without deleting run artifacts", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-store-"));
+    roots.push(projectRoot);
+    const store = createFileStore({ projectRoot });
+    const runtime = createWorkflowRuntime({
+      store,
+      agent: async () => ({ ok: true }),
+    });
+    const run = await runtime.run({ name: "no-write-probe", script: async () => ({ ok: true }) });
+
+    const stopped = store.stop(run.runId);
+    const resumed = store.resume(run.runId);
+
+    expect(stopped.status).toBe("stopped");
+    expect(resumed.status).toBe("stopped");
+    expect(store.eventsFor(run.runId).map((event) => event.type)).toContain("run:stopped");
+    expect(store.eventsFor(run.runId).map((event) => event.type)).toContain("run:resumed");
+    expect(readFileSync(join(projectRoot, ".agent-workflow-kit", "runs", run.runId, "run.json"), "utf8")).toContain("stopped");
+  });
 });

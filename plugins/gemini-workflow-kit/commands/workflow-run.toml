@@ -4,6 +4,9 @@ Run the requested workflow through the agent-workflow-kit MCP tools or shared CL
 CLI fallback:
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-resume <run-id> --json
+agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
+agent-workflow-kit deep-research "<question>" --json
 Return the run id, status, and artifact path only.
 """

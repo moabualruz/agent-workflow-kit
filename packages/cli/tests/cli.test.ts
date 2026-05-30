@@ -11,6 +11,19 @@ afterEach(() => {
 });
 
 describe("agent-workflow-kit cli", () => {
+  test("workflow command runs an ad hoc no-write workflow", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli(["workflow", "inspect repo", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.name).toBe("workflow");
+    expect(payload.status).toBe("completed");
+    expect(payload.result).toEqual({ ok: true, task: "inspect repo" });
+  });
+
   test("runs no-write-probe and prints machine-readable status", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
@@ -51,6 +64,33 @@ describe("agent-workflow-kit cli", () => {
       name: "no-write-probe",
       status: "completed",
     }));
+  });
+
+  test("stops and resumes persisted workflow records", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const stopped = await runCli(["workflow-stop", run.runId, "--project-root", projectRoot, "--json"]);
+    const resumed = await runCli(["workflow-resume", run.runId, "--project-root", projectRoot, "--json"]);
+
+    expect(stopped.exitCode).toBe(0);
+    expect(JSON.parse(stopped.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "stopped" }));
+    expect(resumed.exitCode).toBe(0);
+    expect(JSON.parse(resumed.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "stopped" }));
+  });
+
+  test("deep-research command writes a workflow run with artifact-safe summary", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli(["deep-research", "compare workflow harnesses", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.name).toBe("deep-research");
+    expect(payload.status).toBe("completed");
+    expect(payload.result).toEqual({ ok: true, question: "compare workflow harnesses" });
   });
 });
 

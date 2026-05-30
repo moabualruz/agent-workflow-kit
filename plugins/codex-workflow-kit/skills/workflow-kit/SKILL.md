@@ -12,7 +12,10 @@ Prefer plugin MCP tools when available. Fallback to the shared CLI:
 ```sh
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-resume <run-id> --json
+agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
+agent-workflow-kit deep-research "<question>" --json
 ```
 
 Return run ids and artifact paths, not full intermediate transcripts.
