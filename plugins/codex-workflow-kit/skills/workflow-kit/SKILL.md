@@ -7,7 +7,7 @@ description: Run, inspect, resume, and stop Agent Workflow Kit workflows from Co
 
 Use this skill when the user asks for workflow orchestration, `/workflow`, `/workflows`, `/workflow-run`, `/workflow-status`, `/workflow-resume`, `/workflow-stop`, or `/deep-research`.
 
-Prefer plugin MCP tools when available. Fallback to the shared CLI:
+Use the shared CLI or script calls directly:
 
 ```sh
 agent-workflow-kit workflow-run no-write-probe --json

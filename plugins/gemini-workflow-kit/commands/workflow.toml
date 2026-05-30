@@ -1,6 +1,6 @@
 description = "Create and run an Agent Workflow Kit workflow"
 prompt = """
-Use the shared CLI fallback when MCP tools are unavailable:
+Call the shared CLI directly:
 agent-workflow-kit workflow "<task>" --json
 Return the run id, status, and artifact path only.
 """

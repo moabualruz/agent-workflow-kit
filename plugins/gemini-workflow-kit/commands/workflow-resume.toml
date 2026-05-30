@@ -1,6 +1,6 @@
 description = "Resume an Agent Workflow Kit workflow run"
 prompt = """
-Use the shared CLI fallback when MCP tools are unavailable:
+Call the shared CLI directly:
 agent-workflow-kit workflow-resume <run-id> --json
 Return concise run status and artifact path only.
 """

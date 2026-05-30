@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { callCodexWorkflowTool, codexWorkflowTools } from "../plugins/codex-workflow-kit/mcp/server";
+import { server as openCodeWorkflowServer } from "../plugins/opencode-workflow-kit/src/index";
 import workflowKitExtension from "../plugins/pi-workflow-kit/extensions/index";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
@@ -15,21 +13,35 @@ afterEach(() => {
 });
 
 describe("harness direct workflow tools", () => {
-  test("Codex MCP manifest exposes the workflow server", () => {
-    const manifest = JSON.parse(readFileSync(join(repoRoot, "plugins/codex-workflow-kit/.mcp.json"), "utf8"));
+  test("Codex plugin remains skill and CLI based", () => {
+    const plugin = JSON.parse(readFileSync(join(repoRoot, "plugins/codex-workflow-kit/.codex-plugin/plugin.json"), "utf8"));
+    const skill = readFileSync(join(repoRoot, "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md"), "utf8");
 
-    expect(manifest.mcpServers["agent-workflow-kit"]).toEqual(expect.objectContaining({
-      command: "bun",
-      cwd: ".",
-    }));
-    expect(manifest.mcpServers["agent-workflow-kit"].args).toContain("./mcp/server.ts");
+    expect(plugin.skills).toBe("./skills/");
+    expect(plugin.mcpServers).toBeUndefined();
+    expect(skill).toContain("agent-workflow-kit workflow-run");
+    expect(skill.toLowerCase()).not.toContain("mcp");
   });
 
-  test("Codex MCP tool handlers run and inspect persisted workflow state", async () => {
-    const projectRoot = mkdtempSync(join(tmpdir(), "awk-codex-tools-"));
+  test("Gemini extension remains command and CLI based", () => {
+    const extension = JSON.parse(readFileSync(join(repoRoot, "plugins/gemini-workflow-kit/gemini-extension.json"), "utf8"));
+    const command = readFileSync(join(repoRoot, "plugins/gemini-workflow-kit/commands/workflow-run.toml"), "utf8");
+
+    expect(extension.mcpServers).toBeUndefined();
+    expect(command).toContain("agent-workflow-kit workflow-run");
+    expect(command.toLowerCase()).not.toContain("mcp");
+  });
+
+  test("OpenCode plugin registers native workflow tools", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-opencode-tools-"));
     roots.push(projectRoot);
 
-    expect(codexWorkflowTools.map((tool) => tool.name)).toEqual([
+    const hooks = await openCodeWorkflowServer({
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any);
+
+    expect(Object.keys(hooks.tool ?? {})).toEqual([
       "workflow",
       "workflow_run",
       "workflow_status",
@@ -39,75 +51,18 @@ describe("harness direct workflow tools", () => {
       "deep_research",
     ]);
 
-    const run = await callCodexWorkflowTool("workflow_run", {
+    const result = await hooks.tool?.workflow_run?.execute({
       workflow: "no-write-probe",
       projectRoot,
-    });
-    const runPayload = JSON.parse(run.content[0]?.text ?? "{}");
-    const status = await callCodexWorkflowTool("workflow_status", {
-      runId: runPayload.runId,
-      projectRoot,
-    });
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any);
 
-    expect(runPayload).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
-    expect(JSON.parse(status.content[0]?.text ?? "{}")).toEqual(expect.objectContaining({
-      runId: runPayload.runId,
+    expect(JSON.parse(String(result))).toEqual(expect.objectContaining({
       status: "completed",
+      result: { ok: true },
     }));
-  });
-
-  test("Codex MCP server responds over stdio", async () => {
-    const projectRoot = mkdtempSync(join(tmpdir(), "awk-codex-mcp-"));
-    roots.push(projectRoot);
-    const client = new Client({ name: "agent-workflow-kit-test", version: "0.0.0" });
-    const transport = new StdioClientTransport({
-      command: "bun",
-      args: ["./mcp/server.ts"],
-      cwd: join(repoRoot, "plugins/codex-workflow-kit"),
-    });
-
-    await client.connect(transport);
-    try {
-      const tools = await client.listTools();
-      const result = await client.callTool({
-        name: "workflow_run",
-        arguments: { workflow: "no-write-probe", projectRoot },
-      });
-      const content = result.content as Array<{ text?: string }> | undefined;
-      const firstContent = content?.[0];
-      const payload = firstContent && "text" in firstContent ? JSON.parse(String(firstContent.text)) : undefined;
-
-      expect(tools.tools.map((tool) => tool.name)).toContain("workflow_run");
-      expect(payload).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
-    } finally {
-      await client.close();
-    }
-  });
-
-  test("Gemini MCP server responds over stdio with the shared workflow tools", async () => {
-    const projectRoot = mkdtempSync(join(tmpdir(), "awk-gemini-mcp-"));
-    roots.push(projectRoot);
-    const client = new Client({ name: "agent-workflow-kit-test", version: "0.0.0" });
-    const transport = new StdioClientTransport({
-      command: "bun",
-      args: ["./mcp-server.ts"],
-      cwd: join(repoRoot, "plugins/gemini-workflow-kit"),
-    });
-
-    await client.connect(transport);
-    try {
-      const result = await client.callTool({
-        name: "workflow_run",
-        arguments: { workflow: "no-write-probe", projectRoot },
-      });
-      const content = result.content as Array<{ text?: string }> | undefined;
-      const firstContent = content?.[0];
-      const payload = firstContent && "text" in firstContent ? JSON.parse(String(firstContent.text)) : undefined;
-
-      expect(payload).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
-    } finally {
-      await client.close();
-    }
   });
 
   test("Pi extension registers workflow commands and tools against the host API", async () => {

@@ -22,7 +22,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "zod": "4.4.3"
+    "@opencode-ai/plugin": "1.15.12"
   }
 }

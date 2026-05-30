@@ -6,5 +6,5 @@ Native surfaces:
 
 - extension manifest at `gemini-extension.json`
 - TOML slash commands under `commands/`
-- MCP server entry for stateful workflow tools
+- command prompts that call the shared workflow CLI
 - skills and hooks when needed

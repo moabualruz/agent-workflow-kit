@@ -35,7 +35,28 @@ describe("standalone repository contract", () => {
     }));
     expect(plugin.name).toBe("codex-workflow-kit");
     expect(plugin.skills).toBe("./skills/");
-    expect(plugin.mcpServers).toBe("./.mcp.json");
+    expect(plugin.mcpServers).toBeUndefined();
+  });
+
+  test("ships no MCP workflow surfaces", () => {
+    const offenders: string[] = [];
+    const rootPackage = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+
+    expect(rootPackage.dependencies?.["@modelcontextprotocol/sdk"]).toBeUndefined();
+
+    for (const file of walk(repoRoot)) {
+      const relative = file.replace(repoRoot, "");
+      if (relative.includes("/.git/") || relative.includes("/node_modules/") || relative.endsWith("bun.lock")) continue;
+      if (relative.includes("tests/")) continue;
+
+      const lowerPath = relative.toLowerCase();
+      if (lowerPath.includes("/mcp") || lowerPath.includes(".mcp")) offenders.push(relative);
+
+      const text = readFileSync(file, "utf8");
+      if (/\bmcp\b|modelcontextprotocol/i.test(text)) offenders.push(relative);
+    }
+
+    expect([...new Set(offenders)].sort()).toEqual([]);
   });
 
   test("OpenCode plugin exposes a server entrypoint accepted by opencode plugin install", () => {
@@ -116,6 +137,7 @@ function walk(dir: string): string[] {
   const files: string[] = [];
 
   for (const entry of readdirSync(dir)) {
+    if (entry === ".git" || entry === "node_modules") continue;
     const path = join(dir, entry);
     if (statSync(path).isDirectory()) {
       files.push(...walk(path));

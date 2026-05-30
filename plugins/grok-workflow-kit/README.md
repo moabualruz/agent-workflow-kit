@@ -6,4 +6,4 @@ Native surfaces:
 
 - Grok plugin manifest at `plugin.json`
 - skills and commands for workflow operations
-- MCP bridge when direct custom tools are unavailable
+- hooks only where useful for lifecycle or policy enforcement

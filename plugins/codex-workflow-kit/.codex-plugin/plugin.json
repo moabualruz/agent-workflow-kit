@@ -9,11 +9,10 @@
   "interface": {
     "displayName": "Codex Workflow Kit",
     "shortDescription": "Use Codex Workflow Kit in Codex.",
-    "longDescription": "Codex Workflow Kit adds workflow orchestration commands, skills, and MCP tools.",
+    "longDescription": "Codex Workflow Kit adds workflow orchestration skills that call the shared workflow CLI.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": "Use Codex Workflow Kit for workflow orchestration."
-  },
-  "mcpServers": "./.mcp.json"
+  }
 }
