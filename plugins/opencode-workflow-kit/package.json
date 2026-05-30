@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "exports": {
+    "./server": "./src/index.ts"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"
   }

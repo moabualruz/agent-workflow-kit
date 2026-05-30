@@ -38,6 +38,12 @@ describe("standalone repository contract", () => {
     expect(plugin.mcpServers).toBe("./.mcp.json");
   });
 
+  test("OpenCode plugin exposes a server entrypoint accepted by opencode plugin install", () => {
+    const plugin = JSON.parse(readFileSync(join(repoRoot, "plugins/opencode-workflow-kit/package.json"), "utf8"));
+
+    expect(plugin.exports?.["./server"] ?? plugin.main).toBeDefined();
+  });
+
   test("generic repo files do not mention downstream project names", () => {
     const offenders: string[] = [];
     for (const file of walk(repoRoot)) {
