@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 export type RunStatus = "running" | "completed" | "failed" | "stopped";
 
@@ -57,7 +59,7 @@ export type PermissionDecision =
   | { allowed: false; reason: string };
 
 export type WorkflowRuntimeOptions = {
-  store: MemoryStore;
+  store: WorkflowStore;
   agent: AgentFunction;
   permissionPolicy?: PermissionPolicy;
 };
@@ -68,6 +70,17 @@ export type RunRequest = {
 };
 
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
+export type FileStore = ReturnType<typeof createFileStore>;
+
+export type WorkflowStore = {
+  createRun: (name: string) => WorkflowRun;
+  append: (event: WorkflowEvent) => void;
+  complete: (runId: string, result: unknown) => WorkflowRun;
+  fail: (runId: string, error: unknown) => WorkflowRun;
+  eventsFor: (runId: string) => WorkflowEvent[];
+  getRun?: (runId: string) => WorkflowRun;
+  listRuns?: () => WorkflowRun[];
+};
 
 export function createMemoryStore() {
   const runs = new Map<string, WorkflowRun>();
@@ -107,6 +120,68 @@ export function createMemoryStore() {
 
     eventsFor(runId: string): WorkflowEvent[] {
       return [...(events.get(runId) ?? [])];
+    },
+  };
+}
+
+export function createFileStore(options: { projectRoot: string }) {
+  const runsRoot = join(options.projectRoot, ".agent-workflow-kit", "runs");
+  mkdirSync(runsRoot, { recursive: true });
+
+  return {
+    createRun(name: string): WorkflowRun {
+      const run: WorkflowRun = {
+        runId: `wf_${randomUUID().slice(0, 12)}`,
+        name,
+        status: "running",
+      };
+      mkdirSync(runDir(runsRoot, run.runId), { recursive: true });
+      writeRun(runsRoot, run);
+      appendEvent(runsRoot, { runId: run.runId, type: "run:started" });
+      return run;
+    },
+
+    append(event: WorkflowEvent): void {
+      appendEvent(runsRoot, event);
+    },
+
+    complete(runId: string, result: unknown): WorkflowRun {
+      const run = readRun(runsRoot, runId);
+      run.status = "completed";
+      run.result = result;
+      writeRun(runsRoot, run);
+      appendEvent(runsRoot, { runId, type: "run:completed", result });
+      return { ...run };
+    },
+
+    fail(runId: string, error: unknown): WorkflowRun {
+      const run = readRun(runsRoot, runId);
+      run.status = "failed";
+      run.error = stringifyError(error);
+      writeRun(runsRoot, run);
+      appendEvent(runsRoot, { runId, type: "run:failed", error: run.error });
+      return { ...run };
+    },
+
+    eventsFor(runId: string): WorkflowEvent[] {
+      const eventPath = join(runDir(runsRoot, runId), "events.jsonl");
+      if (!existsSync(eventPath)) return [];
+      return readFileSync(eventPath, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as WorkflowEvent);
+    },
+
+    getRun(runId: string): WorkflowRun {
+      return readRun(runsRoot, runId);
+    },
+
+    listRuns(): WorkflowRun[] {
+      if (!existsSync(runsRoot)) return [];
+      return readdirSync(runsRoot)
+        .filter((entry) => existsSync(join(runsRoot, entry, "run.json")))
+        .map((entry) => readRun(runsRoot, entry))
+        .sort((a, b) => a.runId.localeCompare(b.runId));
     },
   };
 }
@@ -247,4 +322,22 @@ function getRun(runs: Map<string, WorkflowRun>, runId: string): WorkflowRun {
 
 function stringifyError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function runDir(runsRoot: string, runId: string): string {
+  return join(runsRoot, runId);
+}
+
+function writeRun(runsRoot: string, run: WorkflowRun): void {
+  mkdirSync(runDir(runsRoot, run.runId), { recursive: true });
+  writeFileSync(join(runDir(runsRoot, run.runId), "run.json"), `${JSON.stringify(run, null, 2)}\n`);
+}
+
+function readRun(runsRoot: string, runId: string): WorkflowRun {
+  return JSON.parse(readFileSync(join(runDir(runsRoot, runId), "run.json"), "utf8")) as WorkflowRun;
+}
+
+function appendEvent(runsRoot: string, event: WorkflowEvent): void {
+  mkdirSync(runDir(runsRoot, event.runId), { recursive: true });
+  appendFileSync(join(runDir(runsRoot, event.runId), "events.jsonl"), `${JSON.stringify(event)}\n`);
 }

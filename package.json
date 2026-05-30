@@ -10,6 +10,9 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
+  "bin": {
+    "agent-workflow-kit": "packages/cli/src/cli.ts"
+  },
   "workspaces": [
     "packages/*",
     "plugins/*"

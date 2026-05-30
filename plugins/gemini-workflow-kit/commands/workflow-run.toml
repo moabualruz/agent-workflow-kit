@@ -1,5 +1,9 @@
 description = "Run an Agent Workflow Kit workflow"
 prompt = """
-Run the requested workflow through the agent-workflow-kit MCP tools.
+Run the requested workflow through the agent-workflow-kit MCP tools or shared CLI.
+CLI fallback:
+agent-workflow-kit workflow-run no-write-probe --json
+agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflows --json
 Return the run id, status, and artifact path only.
 """

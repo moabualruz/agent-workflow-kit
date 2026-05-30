@@ -44,6 +44,29 @@ describe("standalone repository contract", () => {
     expect(plugin.exports?.["./server"] ?? plugin.main).toBeDefined();
   });
 
+  test("root package exposes the shared workflow CLI", () => {
+    const rootPackage = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+
+    expect(rootPackage.bin?.["agent-workflow-kit"]).toBe("packages/cli/src/cli.ts");
+  });
+
+  test("non-Claude command shims point at the shared CLI instead of placeholder prose", () => {
+    const commandFiles = [
+      "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/gemini-workflow-kit/commands/workflow-run.toml",
+      "plugins/opencode-workflow-kit/commands/workflow-run.md",
+      "plugins/grok-workflow-kit/commands/workflow-run.md",
+      "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+    ];
+
+    for (const file of commandFiles) {
+      const text = readFileSync(join(repoRoot, file), "utf8");
+      expect(text).toContain("agent-workflow-kit");
+      expect(text).toContain("workflow-run");
+      expect(text).toContain("workflow-status");
+    }
+  });
+
   test("generic repo files do not mention downstream project names", () => {
     const offenders: string[] = [];
     for (const file of walk(repoRoot)) {
