@@ -22,6 +22,7 @@ Shared runtime package:
 Current parity contract:
 
 - JavaScript workflow scripts with `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
+- per-agent model override forwarding and event persistence
 - saved workflow names
 - append-like progress events
 - artifact paths for each persisted run (`run.json` and `events.jsonl`)

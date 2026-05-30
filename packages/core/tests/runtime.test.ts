@@ -105,6 +105,35 @@ describe("workflow runtime parity contract", () => {
     }));
   });
 
+  test("agent model override is passed to the adapter and persisted in events", async () => {
+    const store = createMemoryStore();
+    const seenModels: Array<string | undefined> = [];
+    const runtime = createWorkflowRuntime({
+      store,
+      agent: async (_prompt, options) => {
+        seenModels.push(options?.model);
+        return { model: options?.model };
+      },
+    });
+
+    const script: WorkflowScript = async ({ agent }) => agent("use fast worker", {
+      model: "harness/fast-worker",
+    });
+
+    const run = await runtime.run({ name: "model-override", script });
+
+    expect(run.status).toBe("completed");
+    expect(seenModels).toEqual(["harness/fast-worker"]);
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "agent:start",
+      model: "harness/fast-worker",
+    }));
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "agent:done",
+      model: "harness/fast-worker",
+    }));
+  });
+
   test("dontAsk permission policy denies dynamic workflow execution", async () => {
     const store = createMemoryStore();
     const runtime = createWorkflowRuntime({

@@ -26,6 +26,7 @@ export type WorkflowEvent = {
   title?: string;
   kind?: string;
   prompt?: string;
+  model?: string;
   result?: unknown;
   error?: string;
   message?: string;
@@ -358,14 +359,15 @@ function createContext(
 ): WorkflowContext {
   const runAgent = async (prompt: string, agentOptions?: AgentOptions) => {
     const index = ++counters.agent;
-    options.store.append({ runId, type: "agent:start", index, prompt });
+    const model = agentOptions?.model;
+    options.store.append(withModel({ runId, type: "agent:start", index, prompt }, model));
 
     try {
       const result = await options.agent(prompt, agentOptions);
-      options.store.append({ runId, type: "agent:done", index, prompt, result });
+      options.store.append(withModel({ runId, type: "agent:done", index, prompt, result }, model));
       return result;
     } catch (error) {
-      options.store.append({ runId, type: "agent:done", index, prompt, error: stringifyError(error) });
+      options.store.append(withModel({ runId, type: "agent:done", index, prompt, error: stringifyError(error) }, model));
       throw error;
     }
   };
@@ -457,4 +459,8 @@ function artifactPaths(runsRoot: string, runId: string): WorkflowArtifacts {
     runJson: join(root, "run.json"),
     eventsJsonl: join(root, "events.jsonl"),
   };
+}
+
+function withModel(event: WorkflowEvent, model: string | undefined): WorkflowEvent {
+  return model ? { ...event, model } : event;
 }
