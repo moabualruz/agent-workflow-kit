@@ -66,6 +66,12 @@ function createPiCommands(): PiCommand[] {
       run: (input) => service(input).getRun(requireText(input?.runId, "workflow-status requires runId")),
     },
     {
+      name: "workflow-events",
+      description: "Read workflow progress events from persisted state.",
+      inputKey: "runId",
+      run: (input) => service(input).eventsFor(requireText(input?.runId, "workflow-events requires runId")),
+    },
+    {
       name: "workflow-resume",
       description: "Resume a stopped workflow record without deleting artifacts.",
       inputKey: "runId",
@@ -106,6 +112,13 @@ function createPiTools(): PiTool[] {
       "Read workflow status.",
       schema(["runId"], { runId: stringSchema(), projectRoot: stringSchema() }),
       (input) => service(input).getRun(requireText(input.runId, "workflow_status requires runId")),
+    ),
+    toolDefinition(
+      "workflow_events",
+      "Workflow Events",
+      "Read workflow progress events.",
+      schema(["runId"], { runId: stringSchema(), projectRoot: stringSchema() }),
+      (input) => service(input).eventsFor(requireText(input.runId, "workflow_events requires runId")),
     ),
     toolDefinition(
       "workflow_resume",

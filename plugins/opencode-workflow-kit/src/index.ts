@@ -36,6 +36,16 @@ export const server: Plugin = async (input) => {
           return stringify(service(args.projectRoot, context.directory ?? projectRoot).getRun(args.runId));
         },
       }),
+      workflow_events: tool({
+        description: "Read workflow progress events from persisted state.",
+        args: {
+          runId: tool.schema.string(),
+          projectRoot: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          return stringify(service(args.projectRoot, context.directory ?? projectRoot).eventsFor(args.runId));
+        },
+      }),
       workflow_resume: tool({
         description: "Resume a stopped workflow record without deleting artifacts.",
         args: {

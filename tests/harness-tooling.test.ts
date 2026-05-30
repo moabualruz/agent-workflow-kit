@@ -45,6 +45,7 @@ describe("harness direct workflow tools", () => {
       "workflow",
       "workflow_run",
       "workflow_status",
+      "workflow_events",
       "workflow_resume",
       "workflow_stop",
       "workflows",
@@ -85,6 +86,7 @@ describe("harness direct workflow tools", () => {
       "workflow",
       "workflow-run",
       "workflow-status",
+      "workflow-events",
       "workflow-resume",
       "workflow-stop",
       "workflows",
@@ -93,6 +95,7 @@ describe("harness direct workflow tools", () => {
     expect(tools.map((tool) => tool.name)).toEqual([
       "workflow_run",
       "workflow_status",
+      "workflow_events",
       "workflow_resume",
       "workflow_stop",
       "workflows",

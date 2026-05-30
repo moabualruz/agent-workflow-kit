@@ -101,6 +101,21 @@ export default function ({ phase, log }) {
     }));
   });
 
+  test("reads workflow events from persisted state", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const events = await runCli(["workflow-events", run.runId, "--project-root", projectRoot, "--json"]);
+
+    expect(events.exitCode).toBe(0);
+    expect(JSON.parse(events.stdout)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ runId: run.runId, type: "run:started" }),
+      expect.objectContaining({ runId: run.runId, type: "phase", title: "Probe" }),
+      expect.objectContaining({ runId: run.runId, type: "run:completed" }),
+    ]));
+  });
+
   test("lists persisted workflows without transcript spam", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);

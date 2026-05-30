@@ -12,6 +12,7 @@ CLI fallback:
 ```sh
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-events <run-id> --json
 agent-workflow-kit workflow-resume <run-id> --json
 agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
@@ -25,6 +26,7 @@ run_json="$(agent-workflow-kit workflow-run no-write-probe --json)"
 run_id="$(printf '%s' "$run_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.runId);')"
 printf '%s\n' "$run_json"
 agent-workflow-kit workflow-status "$run_id" --json
+agent-workflow-kit workflow-events "$run_id" --json
 agent-workflow-kit workflow-resume "$run_id" --json
 agent-workflow-kit workflow-stop "$run_id" --json
 agent-workflow-kit workflows --json

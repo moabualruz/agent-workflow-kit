@@ -48,6 +48,12 @@ async function main(argv: string[]) {
       return;
     }
 
+    case "workflow-events": {
+      const runId = args.positional[0];
+      print(service.eventsFor(runId ?? ""), args.json);
+      return;
+    }
+
     case "workflows": {
       print(service.listRuns(), args.json);
       return;
@@ -73,7 +79,7 @@ async function main(argv: string[]) {
     }
 
     default:
-      throw new Error("Expected command: workflow, workflow-run, workflow-status, workflow-resume, workflow-stop, workflows, deep-research");
+      throw new Error("Expected command: workflow, workflow-run, workflow-status, workflow-events, workflow-resume, workflow-stop, workflows, deep-research");
   }
 }
 

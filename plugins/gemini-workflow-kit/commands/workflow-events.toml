@@ -1,0 +1,6 @@
+description = "Show Agent Workflow Kit workflow progress events"
+prompt = """
+Call the shared CLI directly:
+agent-workflow-kit workflow-events <run-id> --json
+Return concise progress events and artifact path only.
+"""

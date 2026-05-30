@@ -24,7 +24,7 @@ Current parity contract:
 - JavaScript workflow scripts with `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
 - per-agent model override forwarding and event persistence
 - saved workflow names from `.agent-workflow-kit/workflows/<name>.js` with `.claude/workflows/<name>.js` compatibility fallback
-- append-like progress events
+- append-like progress events through `workflow-events <run-id>`
 - artifact paths for each persisted run (`run.json` and `events.jsonl`)
 - child workflow phase records
 - failed-run state stored independently from process exit status

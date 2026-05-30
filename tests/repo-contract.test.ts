@@ -91,6 +91,7 @@ describe("standalone repository contract", () => {
       expect(text).toContain("agent-workflow-kit");
       expect(text).toContain("workflow-run");
       expect(text).toContain("workflow-status");
+      expect(text).toContain("workflow-events");
       expect(text).toContain("workflow-resume");
       expect(text).toContain("workflow-stop");
       expect(text).toContain("deep-research");
@@ -103,6 +104,7 @@ describe("standalone repository contract", () => {
       "workflows",
       "workflow-run",
       "workflow-status",
+      "workflow-events",
       "workflow-resume",
       "workflow-stop",
       "deep-research",
