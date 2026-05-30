@@ -7,9 +7,5 @@
     "extensions": ["extensions"],
     "skills": ["skills"],
     "promptTemplates": ["prompt-templates"]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
   }
 }

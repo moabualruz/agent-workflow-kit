@@ -59,6 +59,12 @@ describe("standalone repository contract", () => {
     expect([...new Set(offenders)].sort()).toEqual([]);
   });
 
+  test("lockfile does not ship first-party MCP packages or SDK entries", () => {
+    const lockfile = readFileSync(join(repoRoot, "bun.lock"), "utf8");
+
+    expect(lockfile).not.toMatch(/packages\/mcp|@agent-workflow-kit\/mcp|@modelcontextprotocol\/sdk/);
+  });
+
   test("OpenCode plugin exposes a server entrypoint accepted by opencode plugin install", () => {
     const plugin = JSON.parse(readFileSync(join(repoRoot, "plugins/opencode-workflow-kit/package.json"), "utf8"));
 
