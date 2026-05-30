@@ -11,12 +11,14 @@ afterEach(() => {
 });
 
 describe("file-command harness smoke blocks", () => {
-  test("Codex, Gemini, OpenCode, and Grok workflow-run surfaces execute the shared CLI path", async () => {
+  test("skill and command workflow surfaces execute the shared CLI path", async () => {
     for (const file of [
       "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
       "plugins/gemini-workflow-kit/commands/workflow-run.toml",
       "plugins/opencode-workflow-kit/commands/workflow-run.md",
       "plugins/grok-workflow-kit/commands/workflow-run.md",
+      "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
     ]) {
       const smoke = extractExecutableSmoke(readFileSync(join(repoRoot, file), "utf8"));
       const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-command-project-"));

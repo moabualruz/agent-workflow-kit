@@ -16,4 +16,17 @@ agent-workflow-kit workflows --json
 agent-workflow-kit deep-research "<question>" --json
 ```
 
+Executable smoke:
+
+```sh
+run_json="$(agent-workflow-kit workflow-run no-write-probe --json)"
+run_id="$(printf '%s' "$run_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.runId);')"
+printf '%s\n' "$run_json"
+agent-workflow-kit workflow-status "$run_id" --json
+agent-workflow-kit workflow-resume "$run_id" --json
+agent-workflow-kit workflow-stop "$run_id" --json
+agent-workflow-kit workflows --json
+agent-workflow-kit deep-research "file-command-smoke" --json
+```
+
 Persist run metadata with the host session APIs when available.
