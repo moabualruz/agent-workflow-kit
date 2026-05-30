@@ -1,0 +1,9 @@
+{
+  "name": "opencode-workflow-kit",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}

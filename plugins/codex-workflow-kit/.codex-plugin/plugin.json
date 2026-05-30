@@ -1,0 +1,19 @@
+{
+  "name": "codex-workflow-kit",
+  "version": "0.1.0",
+  "description": "Workflow orchestration tools for Codex.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Workflow Kit",
+    "shortDescription": "Use Codex Workflow Kit in Codex.",
+    "longDescription": "Codex Workflow Kit adds workflow orchestration commands, skills, and MCP tools.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use Codex Workflow Kit for workflow orchestration."
+  },
+  "mcpServers": "./.mcp.json"
+}

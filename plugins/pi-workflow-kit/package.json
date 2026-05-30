@@ -1,0 +1,15 @@
+{
+  "name": "pi-workflow-kit",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "pi": {
+    "extensions": ["extensions"],
+    "skills": ["skills"],
+    "promptTemplates": ["prompt-templates"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

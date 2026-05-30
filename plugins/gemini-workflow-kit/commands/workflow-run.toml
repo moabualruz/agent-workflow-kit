@@ -1,0 +1,5 @@
+description = "Run an Agent Workflow Kit workflow"
+prompt = """
+Run the requested workflow through the agent-workflow-kit MCP tools.
+Return the run id, status, and artifact path only.
+"""
