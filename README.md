@@ -24,6 +24,7 @@ Current parity contract:
 - JavaScript workflow scripts with `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
 - saved workflow names
 - append-like progress events
+- artifact paths for each persisted run (`run.json` and `events.jsonl`)
 - child workflow phase records
 - failed-run state stored independently from process exit status
 - permission policy hooks for dynamic workflow execution

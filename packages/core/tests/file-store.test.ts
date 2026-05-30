@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileStore, createWorkflowRuntime, type WorkflowScript } from "../src/index";
@@ -31,8 +31,22 @@ describe("file workflow store", () => {
       runId: run.runId,
       name: "no-write-probe",
       status: "completed",
+      artifacts: {
+        root: runDir,
+        runJson: join(runDir, "run.json"),
+        eventsJsonl: join(runDir, "events.jsonl"),
+      },
       result: { ok: true },
     }));
+    const artifacts = run.artifacts;
+    if (!artifacts) throw new Error("expected file-backed run artifacts");
+    expect(artifacts).toEqual({
+      root: runDir,
+      runJson: join(runDir, "run.json"),
+      eventsJsonl: join(runDir, "events.jsonl"),
+    });
+    expect(existsSync(artifacts.runJson)).toBe(true);
+    expect(existsSync(artifacts.eventsJsonl)).toBe(true);
     const events = readFileSync(join(runDir, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(events.map((event) => event.type)).toEqual([
       "run:started",

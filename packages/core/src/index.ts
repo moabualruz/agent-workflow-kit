@@ -8,8 +8,15 @@ export type WorkflowRun = {
   runId: string;
   name: string;
   status: RunStatus;
+  artifacts?: WorkflowArtifacts;
   result?: unknown;
   error?: string;
+};
+
+export type WorkflowArtifacts = {
+  root: string;
+  runJson: string;
+  eventsJsonl: string;
 };
 
 export type WorkflowEvent = {
@@ -138,10 +145,12 @@ export function createFileStore(options: { projectRoot: string }) {
 
   return {
     createRun(name: string): WorkflowRun {
+      const runId = `wf_${randomUUID().slice(0, 12)}`;
       const run: WorkflowRun = {
-        runId: `wf_${randomUUID().slice(0, 12)}`,
+        runId,
         name,
         status: "running",
+        artifacts: artifactPaths(runsRoot, runId),
       };
       mkdirSync(runDir(runsRoot, run.runId), { recursive: true });
       writeRun(runsRoot, run);
@@ -424,7 +433,8 @@ function writeRun(runsRoot: string, run: WorkflowRun): void {
 }
 
 function readRun(runsRoot: string, runId: string): WorkflowRun {
-  return JSON.parse(readFileSync(join(runDir(runsRoot, runId), "run.json"), "utf8")) as WorkflowRun;
+  const run = JSON.parse(readFileSync(join(runDir(runsRoot, runId), "run.json"), "utf8")) as WorkflowRun;
+  return { ...run, artifacts: run.artifacts ?? artifactPaths(runsRoot, runId) };
 }
 
 function appendEvent(runsRoot: string, event: WorkflowEvent): void {
@@ -436,4 +446,13 @@ function requireText(value: string, message: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(message);
   return normalized;
+}
+
+function artifactPaths(runsRoot: string, runId: string): WorkflowArtifacts {
+  const root = runDir(runsRoot, runId);
+  return {
+    root,
+    runJson: join(root, "run.json"),
+    eventsJsonl: join(root, "events.jsonl"),
+  };
 }

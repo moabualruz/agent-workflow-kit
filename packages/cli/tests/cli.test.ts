@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,6 +90,13 @@ describe("agent-workflow-kit cli", () => {
     const payload = JSON.parse(result.stdout);
     expect(payload.name).toBe("deep-research");
     expect(payload.status).toBe("completed");
+    expect(payload.artifacts).toEqual({
+      root: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId),
+      runJson: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "run.json"),
+      eventsJsonl: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "events.jsonl"),
+    });
+    expect(existsSync(payload.artifacts.runJson)).toBe(true);
+    expect(existsSync(payload.artifacts.eventsJsonl)).toBe(true);
     expect(payload.result).toEqual({ ok: true, question: "compare workflow harnesses" });
   });
 });
