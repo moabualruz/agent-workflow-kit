@@ -68,12 +68,16 @@ describe("harness direct workflow tools", () => {
   test("Pi extension registers workflow commands and tools against the host API", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-pi-tools-"));
     roots.push(projectRoot);
-    const commands: Array<{ name: string }> = [];
-    const tools: Array<{ name: string; run: (input?: Record<string, unknown>) => unknown | Promise<unknown> }> = [];
+    const commands: Array<{ name: string; description: string; handler: (args?: string) => unknown | Promise<unknown> }> = [];
+    const tools: Array<{ name: string; parameters: unknown; execute: (_toolCallId: string, input: Record<string, unknown>) => unknown | Promise<unknown> }> = [];
 
     const extension = workflowKitExtension({
-      registerCommand: (command: { name: string }) => commands.push(command),
-      registerTool: (tool: { name: string; run: (input?: Record<string, unknown>) => unknown | Promise<unknown> }) => tools.push(tool),
+      registerCommand: (name: string, command: { description: string; handler: (args?: string) => unknown | Promise<unknown> }) => {
+        commands.push({ name, ...command });
+      },
+      registerTool: (tool: { name: string; parameters: unknown; execute: (_toolCallId: string, input: Record<string, unknown>) => unknown | Promise<unknown> }) => {
+        tools.push(tool);
+      },
     });
 
     expect(extension.name).toBe("pi-workflow-kit");
@@ -95,11 +99,17 @@ describe("harness direct workflow tools", () => {
       "deep_research",
     ]);
 
-    const run = await tools.find((tool) => tool.name === "workflow_run")?.run({
+    const commandRun = await commands.find((command) => command.name === "workflow-run")?.handler("no-write-probe");
+    expect(commandRun).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
+
+    const toolRun = await tools.find((tool) => tool.name === "workflow_run")?.execute("call-1", {
       workflow: "no-write-probe",
       projectRoot,
     });
 
-    expect(run).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
+    expect(toolRun).toEqual(expect.objectContaining({
+      content: [{ type: "text", text: expect.stringContaining("\"status\":\"completed\"") }],
+      details: expect.objectContaining({ status: "completed", result: { ok: true } }),
+    }));
   });
 });
