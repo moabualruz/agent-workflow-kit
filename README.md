@@ -2,11 +2,12 @@
 
 Harness-native workflow tools for agent CLIs.
 
-Goal: make supported agent harnesses expose Claude Workflows-like orchestration through their native plugin, extension, command, skill, or MCP surfaces.
+Goal: make supported non-Claude agent harnesses expose Claude Workflows-like orchestration through their native plugin, extension, command, skill, or MCP surfaces.
 
-Supported harness packs:
+Claude Code already has native Workflows. This repo uses Claude only as the reference behavior documented in `reference/claude-workflows`; it does not ship a Claude replacement plugin.
 
-- Claude Code: `plugins/claude-workflow-kit`
+Supported implementation packs:
+
 - Codex: `plugins/codex-workflow-kit`
 - Gemini CLI: `plugins/gemini-workflow-kit`
 - OpenCode: `plugins/opencode-workflow-kit`

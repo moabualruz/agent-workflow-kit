@@ -5,9 +5,8 @@ import { join } from "node:path";
 const repoRoot = new URL("..", import.meta.url).pathname;
 
 describe("standalone repository contract", () => {
-  test("ships one harness-native pack per supported CLI", () => {
+  test("ships one implementation pack per non-Claude CLI", () => {
     for (const dir of [
-      "plugins/claude-workflow-kit",
       "plugins/codex-workflow-kit",
       "plugins/gemini-workflow-kit",
       "plugins/opencode-workflow-kit",
@@ -17,6 +16,12 @@ describe("standalone repository contract", () => {
       expect(existsSync(join(repoRoot, dir))).toBe(true);
       expect(existsSync(join(repoRoot, dir, "README.md"))).toBe(true);
     }
+  });
+
+  test("keeps Claude as reference-only because Claude has native Workflows", () => {
+    expect(existsSync(join(repoRoot, "plugins/claude-workflow-kit"))).toBe(false);
+    expect(existsSync(join(repoRoot, "reference/claude-workflows/README.md"))).toBe(true);
+    expect(existsSync(join(repoRoot, "reference/claude-workflows/no-write-probe.js"))).toBe(true);
   });
 
   test("Codex plugin has marketplace and plugin manifests", () => {
