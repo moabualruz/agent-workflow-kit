@@ -27,7 +27,7 @@ Current parity contract:
 - artifact paths for each persisted run (`run.json` and `events.jsonl`)
 - child workflow phase records
 - failed-run state stored independently from process exit status
-- permission policy hooks for dynamic workflow execution
+- permission policy hooks and CLI `--permission-mode dontAsk|bypassPermissions` for dynamic workflow execution
 
 Development gates:
 

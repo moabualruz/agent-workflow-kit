@@ -2,6 +2,8 @@
 
 import {
   createWorkflowCommandService,
+  denyDynamicWorkflowPolicy,
+  type PermissionPolicy,
 } from "@agent-workflow-kit/core";
 
 type ParsedArgs = {
@@ -9,6 +11,7 @@ type ParsedArgs = {
   positional: string[];
   projectRoot: string;
   json: boolean;
+  permissionMode?: string | undefined;
 };
 
 main(process.argv.slice(2)).catch((error) => {
@@ -18,7 +21,10 @@ main(process.argv.slice(2)).catch((error) => {
 
 async function main(argv: string[]) {
   const args = parseArgs(argv);
-  const service = createWorkflowCommandService({ projectRoot: args.projectRoot });
+  const service = createWorkflowCommandService({
+    projectRoot: args.projectRoot,
+    permissionPolicy: permissionPolicyFor(args.permissionMode),
+  });
 
   switch (args.command) {
     case "workflow": {
@@ -75,6 +81,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   let projectRoot = process.cwd();
   let json = false;
+  let permissionMode: string | undefined;
   let command: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -94,6 +101,14 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === "--permission-mode") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--permission-mode requires a value");
+      permissionMode = value;
+      index += 1;
+      continue;
+    }
+
     if (!command) {
       command = arg;
       continue;
@@ -102,7 +117,13 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json };
+  return { command, positional, projectRoot, json, permissionMode };
+}
+
+function permissionPolicyFor(permissionMode: string | undefined): PermissionPolicy | undefined {
+  if (!permissionMode || permissionMode === "bypassPermissions") return undefined;
+  if (permissionMode === "dontAsk") return denyDynamicWorkflowPolicy;
+  throw new Error(`Unsupported permission mode: ${permissionMode}`);
 }
 
 function print(value: unknown, json: boolean): void {

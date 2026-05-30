@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorkflowCommandService } from "../src/index";
+import { createWorkflowCommandService, denyDynamicWorkflowPolicy } from "../src/index";
 
 const roots: string[] = [];
 
@@ -49,5 +49,22 @@ describe("workflow command service", () => {
 
     expect(workflow.result).toEqual({ ok: true, task: "inspect repo" });
     expect(research.result).toEqual({ ok: true, question: "compare workflow harnesses" });
+  });
+
+  test("applies permission policy before running saved workflows", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-command-service-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({
+      projectRoot,
+      permissionPolicy: denyDynamicWorkflowPolicy,
+    });
+
+    const run = await service.runSavedWorkflow("no-write-probe");
+
+    expect(run).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "failed",
+      error: "Dynamic workflow execution denied by permission policy",
+    }));
   });
 });

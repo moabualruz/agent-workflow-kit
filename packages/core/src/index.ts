@@ -68,7 +68,7 @@ export type PermissionDecision =
 export type WorkflowRuntimeOptions = {
   store: WorkflowStore;
   agent: AgentFunction;
-  permissionPolicy?: PermissionPolicy;
+  permissionPolicy?: PermissionPolicy | undefined;
 };
 
 export type RunRequest = {
@@ -79,6 +79,7 @@ export type RunRequest = {
 export type WorkflowCommandServiceOptions = {
   projectRoot: string;
   agent?: AgentFunction;
+  permissionPolicy?: PermissionPolicy | undefined;
 };
 
 export type WorkflowCommandService = ReturnType<typeof createWorkflowCommandService>;
@@ -250,6 +251,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
   const runtime = createWorkflowRuntime({
     store,
     agent: options.agent ?? (async () => ({ ok: true })),
+    permissionPolicy: options.permissionPolicy,
   });
 
   return {

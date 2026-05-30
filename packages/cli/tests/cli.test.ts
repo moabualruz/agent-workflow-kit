@@ -37,6 +37,31 @@ describe("agent-workflow-kit cli", () => {
     expect(readFileSync(join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "run.json"), "utf8")).toContain("completed");
   });
 
+  test("permission-mode dontAsk records a denied workflow run as structured output", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli([
+      "workflow-run",
+      "no-write-probe",
+      "--permission-mode",
+      "dontAsk",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "failed",
+      error: "Dynamic workflow execution denied by permission policy",
+    }));
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("permission:denied");
+    expect(readFileSync(payload.artifacts.runJson, "utf8")).toContain("\"status\": \"failed\"");
+  });
+
   test("reads run status from persisted state", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
