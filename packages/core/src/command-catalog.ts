@@ -4,6 +4,13 @@ import { requireInputText } from "./errors";
 
 export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question";
 export type WorkflowCommandArgumentMode = "first" | "join";
+export type WorkflowCommandToolInputKind = "string" | "object";
+
+export type WorkflowCommandToolInput = {
+  name: "projectRoot" | WorkflowCommandInputKey | "args";
+  kind: WorkflowCommandToolInputKind;
+  required: boolean;
+};
 
 export type WorkflowCommandSpec = {
   name: string;
@@ -136,6 +143,37 @@ export function inputForCliArguments(spec: WorkflowCatalogEntry, positional: str
   if (!spec.inputKey) return {};
   if (spec.argumentMode === "join") return { [spec.inputKey]: positional.join(" ").trim() };
   return { [spec.inputKey]: positional[0] ?? "" };
+}
+
+export function workflowCommandToolInputs(command: WorkflowCatalogEntry): WorkflowCommandToolInput[] {
+  const inputs: WorkflowCommandToolInput[] = [
+    { name: "projectRoot", kind: "string", required: false },
+  ];
+  if (command.inputKey) inputs.push({ name: command.inputKey, kind: "string", required: true });
+  if (command.acceptsArgs) inputs.push({ name: "args", kind: "object", required: false });
+  return inputs;
+}
+
+export function workflowCommandToolInputSchema(command: WorkflowCatalogEntry) {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const input of workflowCommandToolInputs(command)) {
+    properties[input.name] = jsonSchemaFor(input.kind);
+    if (input.required) required.push(input.name);
+  }
+
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false,
+  };
+}
+
+function jsonSchemaFor(kind: WorkflowCommandToolInputKind) {
+  if (kind === "object") return { type: "object", additionalProperties: true };
+  return { type: "string" };
 }
 
 function readWorkflowArgs(value: unknown): WorkflowArgs {

@@ -5,7 +5,9 @@ import {
   dispatchWorkflowCommand,
   parseModelAliases,
   workflowCommandCatalog,
+  workflowCommandToolInputs,
   type WorkflowCatalogEntry,
+  type WorkflowCommandToolInputKind,
 } from "../../../packages/core/src/index";
 
 export const server: Plugin = async (input) => {
@@ -44,12 +46,15 @@ function service(projectRoot: string | undefined, fallbackRoot: string) {
 }
 
 function toolArgs(command: WorkflowCatalogEntry) {
-  const args: Record<string, any> = {
-    projectRoot: tool.schema.string().optional(),
-  };
-  if (command.inputKey) args[command.inputKey] = tool.schema.string();
-  if (command.acceptsArgs) args.args = tool.schema.record(tool.schema.string(), tool.schema.unknown()).optional();
-  return args;
+  return Object.fromEntries(workflowCommandToolInputs(command).map((input) => [
+    input.name,
+    input.required ? toolSchemaFor(input.kind) : toolSchemaFor(input.kind).optional(),
+  ]));
+}
+
+function toolSchemaFor(kind: WorkflowCommandToolInputKind) {
+  if (kind === "object") return tool.schema.record(tool.schema.string(), tool.schema.unknown());
+  return tool.schema.string();
 }
 
 function readOptionalString(value: unknown): string | undefined {

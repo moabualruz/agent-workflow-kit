@@ -30,7 +30,7 @@ Core module boundaries:
 - `workflow-authoring.ts`: generated workflow names and project workflow file writes
 - `saved-workflows.ts`: saved workflow lookup and script loading
 - `command-service.ts`: application service for workflow commands
-- `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, and dispatch
+- `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, native tool input schema, and dispatch
 - `model-policy.ts`: Claude-style model alias resolution before harness adapter calls
 
 Current parity contract:

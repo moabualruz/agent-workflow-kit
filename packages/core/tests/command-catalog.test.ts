@@ -5,8 +5,10 @@ import { join } from "node:path";
 import {
   createWorkflowCommandService,
   dispatchWorkflowCommand,
+  workflowCommandToolInputSchema,
   workflowCommandCatalog,
   workflowCommandNames,
+  workflowCommandToolInputs,
   workflowToolNames,
 } from "../src/index";
 
@@ -58,5 +60,26 @@ describe("workflow command catalog", () => {
       expect.objectContaining({ runId: run.runId, type: "run:started" }),
       expect.objectContaining({ runId: run.runId, type: "run:completed" }),
     ]));
+  });
+
+  test("owns native tool input contracts in the shared catalog", () => {
+    const workflowRun = workflowCommandCatalog.find((command) => command.name === "workflow-run");
+    if (!workflowRun) throw new Error("missing workflow-run command");
+
+    expect(workflowCommandToolInputs(workflowRun)).toEqual([
+      { name: "projectRoot", kind: "string", required: false },
+      { name: "workflow", kind: "string", required: true },
+      { name: "args", kind: "object", required: false },
+    ]);
+    expect(workflowCommandToolInputSchema(workflowRun)).toEqual({
+      type: "object",
+      properties: {
+        projectRoot: { type: "string" },
+        workflow: { type: "string" },
+        args: { type: "object", additionalProperties: true },
+      },
+      required: ["workflow"],
+      additionalProperties: false,
+    });
   });
 });

@@ -4,6 +4,7 @@ import {
   dispatchWorkflowCommand,
   parseModelAliases,
   workflowCommandCatalog,
+  workflowCommandToolInputSchema,
   type WorkflowCatalogEntry,
   type WorkflowCommandInputKey,
 } from "../../../packages/core/src/index";
@@ -111,28 +112,7 @@ function commandInput(args: unknown, key: WorkflowCommandInputKey | undefined): 
 }
 
 function schemaFor(command: WorkflowCatalogEntry) {
-  const required = command.inputKey ? [command.inputKey] : [];
-  const properties: Record<string, unknown> = { projectRoot: stringSchema() };
-  if (command.inputKey) properties[command.inputKey] = stringSchema();
-  if (command.acceptsArgs) properties.args = objectSchema();
-  return schema(required, properties);
-}
-
-function schema(required: string[], properties: Record<string, unknown>) {
-  return {
-    type: "object",
-    properties,
-    required,
-    additionalProperties: false,
-  };
-}
-
-function stringSchema() {
-  return { type: "string" };
-}
-
-function objectSchema() {
-  return { type: "object", additionalProperties: true };
+  return workflowCommandToolInputSchema(command);
 }
 
 function readText(value: unknown): string | undefined {
