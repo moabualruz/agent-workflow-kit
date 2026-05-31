@@ -27,6 +27,7 @@ Core module boundaries:
 - `domain.ts`: workflow domain types and runtime interfaces
 - `store.ts`: in-memory and file-backed run/event persistence
 - `runtime.ts`: workflow execution semantics
+- `execution-limits.ts`: per-run agent count and concurrency gates
 - `workflow-authoring.ts`: generated workflow names and project workflow file writes
 - `saved-workflows.ts`: saved workflow lookup and script loading
 - `command-service.ts`: application service for workflow commands
@@ -39,7 +40,8 @@ Current parity contract:
 - Claude-style workflow script bodies with `export const meta`, top-level `phase()` / `agent()` calls, top-level `return`, and `workflow({ scriptPath }, args)` child calls
 - per-agent model override forwarding and event persistence
 - Claude-style model aliases through CLI `--model-alias alias=provider/model` or `AGENT_WORKFLOW_KIT_MODEL_ALIASES=alias=provider/model,...`, preserving `requestedModel` and resolved `model` in events
-- saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, `scripts/workflows/<name>.workflow.js`, direct `.js` script paths, with `.claude/workflows/<name>.js` compatibility fallback
+- Claude-style per-run agent limits: 16 concurrent agents and 1000 total agent calls by default
+- saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, project `.claude/workflows/<name>.js`, `scripts/workflows/<name>.workflow.js`, direct `.js` script paths, with personal `~/.claude/workflows/<name>.js` compatibility fallback; project files win over personal files
 - `workflow "<task>"` writes `.agent-workflow-kit/workflows/<generated-name>.js` and returns that workflow name/path for later `workflow-run`
 - structured workflow args through `workflow-run <workflow> --args-json '{"key":"value"}'`, exposed to scripts as `context.args`
 - append-like progress events through `workflow-events <run-id>`

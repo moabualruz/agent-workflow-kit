@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { WorkflowArgs, WorkflowInvocation, WorkflowScript } from "./domain";
@@ -15,6 +16,10 @@ export type SavedWorkflow = {
 export type ResolvedWorkflowScript = {
   name: string;
   script: WorkflowScript;
+};
+
+export type WorkflowLookupOptions = {
+  homeRoot?: string | undefined;
 };
 
 export function createMemoryWorkflowRegistry() {
@@ -38,11 +43,19 @@ export function createMemoryWorkflowRegistry() {
   };
 }
 
-export async function resolveWorkflowScript(projectRoot: string, workflowName: string): Promise<WorkflowScript> {
-  return (await resolveWorkflow(projectRoot, workflowName)).script;
+export async function resolveWorkflowScript(
+  projectRoot: string,
+  workflowName: string,
+  options: WorkflowLookupOptions = {},
+): Promise<WorkflowScript> {
+  return (await resolveWorkflow(projectRoot, workflowName, options)).script;
 }
 
-export async function resolveWorkflow(projectRoot: string, workflowRef: string): Promise<ResolvedWorkflowScript> {
+export async function resolveWorkflow(
+  projectRoot: string,
+  workflowRef: string,
+  options: WorkflowLookupOptions = {},
+): Promise<ResolvedWorkflowScript> {
   const directPath = directWorkflowPath(projectRoot, workflowRef);
   if (directPath) {
     return {
@@ -52,7 +65,7 @@ export async function resolveWorkflow(projectRoot: string, workflowRef: string):
   }
 
   assertWorkflowName(workflowRef);
-  const workflowPath = findWorkflowFile(projectRoot, workflowRef);
+  const workflowPath = findWorkflowFile(projectRoot, workflowRef, options);
   if (workflowPath) {
     return {
       name: workflowRef,
@@ -70,6 +83,7 @@ export async function resolveWorkflowInvocation(
   projectRoot: string,
   request: WorkflowInvocation,
   args?: WorkflowArgs,
+  options: WorkflowLookupOptions = {},
 ): Promise<ResolvedWorkflowInvocation> {
   if (request.script) {
     return {
@@ -90,7 +104,7 @@ export async function resolveWorkflowInvocation(
   }
 
   if (request.name) {
-    const workflow = await resolveWorkflow(projectRoot, request.name);
+    const workflow = await resolveWorkflow(projectRoot, request.name, options);
     return {
       ...workflow,
       args: args ?? request.args,
@@ -111,11 +125,13 @@ const builtInWorkflows = new Map<string, WorkflowScript>([
   ],
 ]);
 
-function findWorkflowFile(projectRoot: string, workflowName: string): string | undefined {
+function findWorkflowFile(projectRoot: string, workflowName: string, options: WorkflowLookupOptions): string | undefined {
+  const homeRoot = options.homeRoot ?? homedir();
   const candidates = [
     join(projectRoot, ".agent-workflow-kit", "workflows", `${workflowName}.js`),
     join(projectRoot, ".claude", "workflows", `${workflowName}.js`),
     join(projectRoot, "scripts", "workflows", `${workflowName}.workflow.js`),
+    join(homeRoot, ".claude", "workflows", `${workflowName}.js`),
   ];
   return candidates.find((candidate) => existsSync(candidate));
 }

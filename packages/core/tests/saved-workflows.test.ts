@@ -190,4 +190,48 @@ return { args };
       rmSync(projectRoot, { recursive: true, force: true });
     }
   });
+
+  test("command service falls back to personal Claude workflow files and keeps project precedence", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-project-workflows-"));
+    const homeRoot = mkdtempSync(join(tmpdir(), "awk-home-workflows-"));
+    try {
+      const projectWorkflowsRoot = join(projectRoot, ".claude", "workflows");
+      const personalWorkflowsRoot = join(homeRoot, ".claude", "workflows");
+      mkdirSync(projectWorkflowsRoot, { recursive: true });
+      mkdirSync(personalWorkflowsRoot, { recursive: true });
+      writeFileSync(join(projectWorkflowsRoot, "same-name.js"), `
+export default function () {
+  return { source: "project" };
+}
+`);
+      writeFileSync(join(personalWorkflowsRoot, "same-name.js"), `
+export default function () {
+  return { source: "personal" };
+}
+`);
+      writeFileSync(join(personalWorkflowsRoot, "personal-only.js"), `
+export default function () {
+  return { source: "personal-only" };
+}
+`);
+      const service = createWorkflowCommandService({ projectRoot, homeRoot });
+
+      const projectRun = await service.runSavedWorkflow("same-name");
+      const personalRun = await service.runSavedWorkflow("personal-only");
+
+      expect(projectRun).toEqual(expect.objectContaining({
+        name: "same-name",
+        status: "completed",
+        result: { source: "project" },
+      }));
+      expect(personalRun).toEqual(expect.objectContaining({
+        name: "personal-only",
+        status: "completed",
+        result: { source: "personal-only" },
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+      rmSync(homeRoot, { recursive: true, force: true });
+    }
+  });
 });

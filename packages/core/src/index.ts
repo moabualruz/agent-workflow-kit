@@ -2,6 +2,7 @@ export * from "./command-catalog";
 export * from "./command-service";
 export * from "./domain";
 export * from "./errors";
+export * from "./execution-limits";
 export * from "./model-policy";
 export * from "./permissions";
 export * from "./runtime";

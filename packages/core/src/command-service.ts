@@ -10,6 +10,7 @@ import { saveGeneratedWorkflow } from "./workflow-authoring";
 
 export type WorkflowCommandServiceOptions = {
   projectRoot: string;
+  homeRoot?: string | undefined;
   agent?: AgentFunction;
   modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
@@ -24,7 +25,9 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     agent: options.agent ?? schemaDefaultAgent,
     modelPolicy: options.modelPolicy,
     permissionPolicy: options.permissionPolicy,
-    resolveWorkflow: (request, args) => resolveWorkflowInvocation(options.projectRoot, request, args),
+    resolveWorkflow: (request, args) => resolveWorkflowInvocation(options.projectRoot, request, args, {
+      homeRoot: options.homeRoot,
+    }),
   });
 
   return {
@@ -43,7 +46,9 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
 
     async runSavedWorkflow(name: string, args: WorkflowArgs = {}) {
       const workflowName = requireText(name, "workflow-run requires workflow name");
-      const workflow = await resolveWorkflow(options.projectRoot, workflowName);
+      const workflow = await resolveWorkflow(options.projectRoot, workflowName, {
+        homeRoot: options.homeRoot,
+      });
       return runtime.run({ ...workflow, args });
     },
 

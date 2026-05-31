@@ -36,6 +36,62 @@ describe("workflow runtime parity contract", () => {
     expect(store.eventsFor(run.runId).filter((event) => event.type === "agent:done").map((event) => event.index)).toEqual([2, 1]);
   });
 
+  test("parallel agent calls honor the configured concurrent agent limit", async () => {
+    const store = createMemoryStore();
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createWorkflowRuntime({
+      store,
+      workflowLimits: { maxConcurrentAgents: 2 },
+      agent: async (prompt) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return { prompt };
+      },
+    });
+
+    const script: WorkflowScript = async ({ parallel, agent }) => parallel([
+      () => agent("one"),
+      () => agent("two"),
+      () => agent("three"),
+      () => agent("four"),
+    ]);
+
+    const run = await runtime.run({ name: "agent-concurrency", script });
+
+    expect(run.status).toBe("completed");
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(run.result).toEqual([
+      { prompt: "one" },
+      { prompt: "two" },
+      { prompt: "three" },
+      { prompt: "four" },
+    ]);
+  });
+
+  test("agent calls fail closed after the configured per-run agent limit", async () => {
+    const store = createMemoryStore();
+    const runtime = createWorkflowRuntime({
+      store,
+      workflowLimits: { maxAgentsPerRun: 2 },
+      agent: async (prompt) => ({ prompt }),
+    });
+
+    const script: WorkflowScript = async ({ agent }) => {
+      await agent("one");
+      await agent("two");
+      return agent("three");
+    };
+
+    const run = await runtime.run({ name: "agent-total-limit", script });
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("Workflow agent limit exceeded: 2");
+    expect(store.eventsFor(run.runId).filter((event) => event.type === "agent:start")).toHaveLength(2);
+  });
+
   test("pipeline starts each stage after prior stage completion and returns final stage result", async () => {
     const store = createMemoryStore();
     const runtime = createWorkflowRuntime({

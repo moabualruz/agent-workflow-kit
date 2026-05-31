@@ -1,5 +1,6 @@
 import type { RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowInvocation, WorkflowScript, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
+import { createAgentExecutionGate, type WorkflowLimits } from "./execution-limits";
 import type { ModelPolicy, ModelResolution } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 
@@ -8,6 +9,7 @@ export type WorkflowRuntimeOptions = {
   agent: (prompt: string, options?: { model?: string; schema?: unknown }) => Promise<unknown>;
   modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
+  workflowLimits?: WorkflowLimits | undefined;
   resolveWorkflow?: (request: WorkflowInvocation, args?: WorkflowArgs) => Promise<ResolvedWorkflowInvocation>;
 };
 
@@ -33,7 +35,8 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       }
 
       const counters = { phase: 0, agent: 0 };
-      const context = createContext(run.runId, options, counters, request.args ?? {});
+      const agentGate = createAgentExecutionGate(options.workflowLimits);
+      const context = createContext(run.runId, options, counters, agentGate, request.args ?? {});
 
       try {
         const result = await request.script(context);
@@ -49,21 +52,24 @@ function createContext(
   runId: string,
   options: WorkflowRuntimeOptions,
   counters: { phase: number; agent: number },
+  agentGate: ReturnType<typeof createAgentExecutionGate>,
   args: WorkflowArgs,
 ): WorkflowContext {
   const runAgent = async (prompt: string, agentOptions?: { model?: string; schema?: unknown }) => {
-    const index = ++counters.agent;
     const model = resolveModel(options.modelPolicy, agentOptions?.model);
-    options.store.append(withModel({ runId, type: "agent:start", index, prompt }, model));
+    return agentGate.run(async () => {
+      const index = ++counters.agent;
+      options.store.append(withModel({ runId, type: "agent:start", index, prompt }, model));
 
-    try {
-      const result = await options.agent(prompt, withResolvedModel(agentOptions, model));
-      options.store.append(withModel({ runId, type: "agent:done", index, prompt, result }, model));
-      return result;
-    } catch (error) {
-      options.store.append(withModel({ runId, type: "agent:done", index, prompt, error: stringifyError(error) }, model));
-      throw error;
-    }
+      try {
+        const result = await options.agent(prompt, withResolvedModel(agentOptions, model));
+        options.store.append(withModel({ runId, type: "agent:done", index, prompt, result }, model));
+        return result;
+      } catch (error) {
+        options.store.append(withModel({ runId, type: "agent:done", index, prompt, error: stringifyError(error) }, model));
+        throw error;
+      }
+    });
   };
 
   return {
@@ -104,7 +110,7 @@ function createContext(
         kind: "child",
       });
 
-      return child.script(createContext(runId, options, counters, child.args ?? {}));
+      return child.script(createContext(runId, options, counters, agentGate, child.args ?? {}));
     },
 
     log(message: string): void {
