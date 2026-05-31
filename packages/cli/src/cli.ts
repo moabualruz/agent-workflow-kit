@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import {
+  createAliasModelPolicy,
   createWorkflowCommandService,
   denyDynamicWorkflowPolicy,
   dispatchWorkflowCommand,
@@ -15,6 +16,7 @@ type ParsedArgs = {
   positional: string[];
   projectRoot: string;
   json: boolean;
+  modelAliases: Record<string, string>;
   permissionMode?: string | undefined;
 };
 
@@ -27,6 +29,7 @@ async function main(argv: string[]) {
   const args = parseArgs(argv);
   const service = createWorkflowCommandService({
     projectRoot: args.projectRoot,
+    modelPolicy: createAliasModelPolicy(args.modelAliases),
     permissionPolicy: permissionPolicyFor(args.permissionMode),
   });
   const spec = findWorkflowCommandSpec(args.command);
@@ -41,6 +44,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   let projectRoot = process.cwd();
   let json = false;
+  const modelAliases: Record<string, string> = {};
   let permissionMode: string | undefined;
   let command: string | undefined;
 
@@ -69,6 +73,17 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === "--model-alias") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--model-alias requires a value");
+      const [alias, ...modelParts] = value.split("=");
+      const model = modelParts.join("=").trim();
+      if (!alias?.trim() || !model) throw new Error("--model-alias requires alias=model");
+      modelAliases[alias.trim()] = model;
+      index += 1;
+      continue;
+    }
+
     if (!command) {
       command = arg;
       continue;
@@ -77,7 +92,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json, permissionMode };
+  return { command, positional, projectRoot, json, modelAliases, permissionMode };
 }
 
 function permissionPolicyFor(permissionMode: string | undefined): PermissionPolicy | undefined {

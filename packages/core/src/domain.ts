@@ -23,6 +23,7 @@ export type WorkflowEvent = {
   kind?: string;
   prompt?: string;
   model?: string;
+  requestedModel?: string;
   result?: unknown;
   error?: string;
   message?: string;

@@ -1,10 +1,12 @@
 import type { RunRequest, WorkflowContext, WorkflowEvent, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
+import type { ModelPolicy, ModelResolution } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 
 export type WorkflowRuntimeOptions = {
   store: WorkflowStore;
   agent: (prompt: string, options?: { model?: string; schema?: unknown }) => Promise<unknown>;
+  modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
 };
 
@@ -43,11 +45,11 @@ function createContext(
 ): WorkflowContext {
   const runAgent = async (prompt: string, agentOptions?: { model?: string; schema?: unknown }) => {
     const index = ++counters.agent;
-    const model = agentOptions?.model;
+    const model = resolveModel(options.modelPolicy, agentOptions?.model);
     options.store.append(withModel({ runId, type: "agent:start", index, prompt }, model));
 
     try {
-      const result = await options.agent(prompt, agentOptions);
+      const result = await options.agent(prompt, withResolvedModel(agentOptions, model));
       options.store.append(withModel({ runId, type: "agent:done", index, prompt, result }, model));
       return result;
     } catch (error) {
@@ -101,6 +103,27 @@ function createContext(
   };
 }
 
-function withModel(event: WorkflowEvent, model: string | undefined): WorkflowEvent {
-  return model ? { ...event, model } : event;
+function resolveModel(modelPolicy: ModelPolicy | undefined, model: string | undefined): ModelResolution | undefined {
+  if (!model) return undefined;
+  return modelPolicy?.resolveModel(model) ?? { model };
+}
+
+function withResolvedModel(
+  agentOptions: { model?: string; schema?: unknown } | undefined,
+  resolution: ModelResolution | undefined,
+): { model?: string; schema?: unknown } | undefined {
+  if (!resolution) return agentOptions;
+  return {
+    ...agentOptions,
+    model: resolution.model,
+  };
+}
+
+function withModel(event: WorkflowEvent, resolution: ModelResolution | undefined): WorkflowEvent {
+  if (!resolution) return event;
+  return {
+    ...event,
+    model: resolution.model,
+    ...(resolution.requestedModel ? { requestedModel: resolution.requestedModel } : {}),
+  };
 }

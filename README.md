@@ -30,11 +30,13 @@ Core module boundaries:
 - `saved-workflows.ts`: saved workflow lookup and script loading
 - `command-service.ts`: application service for workflow commands
 - `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, and dispatch
+- `model-policy.ts`: Claude-style model alias resolution before harness adapter calls
 
 Current parity contract:
 
 - JavaScript workflow scripts with `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
 - per-agent model override forwarding and event persistence
+- Claude-style model aliases through CLI `--model-alias alias=provider/model`, preserving `requestedModel` and resolved `model` in events
 - saved workflow names from `.agent-workflow-kit/workflows/<name>.js` with `.claude/workflows/<name>.js` compatibility fallback
 - append-like progress events through `workflow-events <run-id>`
 - artifact paths for each persisted run (`run.json` and `events.jsonl`)

@@ -164,6 +164,34 @@ export default function ({ phase, log }) {
     expect(existsSync(payload.artifacts.eventsJsonl)).toBe(true);
     expect(payload.result).toEqual({ ok: true, question: "compare workflow harnesses" });
   });
+
+  test("model aliases resolve through persisted workflow events", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "model-alias.js"), `
+export default async function ({ agent }) {
+  return agent("model probe", { model: "haiku" });
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "model-alias",
+      "--model-alias",
+      "haiku=provider/fast-worker",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
+    expect(events).toContain("\"requestedModel\":\"haiku\"");
+    expect(events).toContain("\"model\":\"provider/fast-worker\"");
+  });
 });
 
 async function runCli(args: string[]) {

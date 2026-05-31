@@ -1,5 +1,6 @@
 import type { AgentFunction } from "./domain";
 import { requireText } from "./errors";
+import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 import { createWorkflowRuntime } from "./runtime";
 import { resolveWorkflowScript } from "./saved-workflows";
@@ -8,6 +9,7 @@ import { createFileStore } from "./store";
 export type WorkflowCommandServiceOptions = {
   projectRoot: string;
   agent?: AgentFunction;
+  modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
 };
 
@@ -18,6 +20,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
   const runtime = createWorkflowRuntime({
     store,
     agent: options.agent ?? (async () => ({ ok: true })),
+    modelPolicy: options.modelPolicy,
     permissionPolicy: options.permissionPolicy,
   });
 
