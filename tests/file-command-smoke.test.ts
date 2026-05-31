@@ -46,6 +46,7 @@ describe("file-command harness smoke blocks", () => {
       ]);
 
       expect({ file, stderr, stdout, exitCode }).toEqual(expect.objectContaining({ exitCode: 0 }));
+      expect(stdout).toContain("\"name\":\"file-command-generated\"");
       expect(stdout).toContain("\"name\":\"no-write-probe\"");
       expect(stdout).toContain("\"name\":\"deep-research\"");
     }

@@ -18,6 +18,10 @@ Saved workflow scripts read structured args from `context.args`.
 Executable smoke:
 
 ```sh
+generated_json="$(agent-workflow-kit workflow "file command generated" --json)"
+generated_name="$(printf '%s' "$generated_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.result.workflow.name);')"
+printf '%s\n' "$generated_json"
+agent-workflow-kit workflow-run "$generated_name" --json
 run_json="$(agent-workflow-kit workflow-run no-write-probe --json)"
 run_id="$(printf '%s' "$run_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.runId);')"
 printf '%s\n' "$run_json"
