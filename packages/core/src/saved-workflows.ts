@@ -165,7 +165,7 @@ function isClaudeStyleWorkflowSource(source: string): boolean {
 }
 
 function compileClaudeStyleWorkflowScript(source: string, workflowPath: string): WorkflowScript {
-  const body = source.replace(/\bexport\s+const\s+meta\s*=/, "const meta =");
+  const body = addReturnForFinalExpression(source.replace(/\bexport\s+const\s+meta\s*=/, "const meta ="));
   const sourceUrl = workflowPath.replaceAll("\\", "/");
   // eslint-disable-next-line no-new-func
   const run = Function(
@@ -179,6 +179,36 @@ ${body}
   ) as (context: unknown) => Promise<unknown>;
 
   return (context) => run(context);
+}
+
+function addReturnForFinalExpression(source: string): string {
+  const lines = source.split("\n");
+  const finalExpressionIndex = findFinalExpressionLine(lines);
+  if (finalExpressionIndex === undefined) return source;
+
+  const line = lines[finalExpressionIndex];
+  if (line === undefined) return source;
+  const indent = line.match(/^\s*/)?.[0] ?? "";
+  const expression = line.trim().replace(/;$/, "");
+  lines[finalExpressionIndex] = `${indent}return ${expression};`;
+  return lines.join("\n");
+}
+
+function findFinalExpressionLine(lines: string[]): number | undefined {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (line === undefined) continue;
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("//")) continue;
+    if (!isReturnableExpressionLine(trimmed)) return undefined;
+    return index;
+  }
+
+  return undefined;
+}
+
+function isReturnableExpressionLine(trimmed: string): boolean {
+  return !/^(?:return\b|const\b|let\b|var\b|function\b|class\b|if\b|for\b|while\b|switch\b|try\b|catch\b|finally\b|throw\b|import\b|export\b|await\s+using\b|using\b|[\]}])/.test(trimmed);
 }
 
 function assertWorkflowName(workflowName: string): void {

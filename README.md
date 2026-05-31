@@ -37,7 +37,7 @@ Core module boundaries:
 Current parity contract:
 
 - JavaScript workflow scripts with `args`, `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
-- Claude-style workflow script bodies with `export const meta`, top-level `phase()` / `agent()` calls, top-level `return`, and `workflow({ scriptPath }, args)` child calls
+- Claude-style workflow script bodies with `export const meta`, top-level `phase()` / `agent()` calls, top-level `return` or save-dialog final expression values, and `workflow({ scriptPath }, args)` child calls
 - per-agent model override forwarding and event persistence
 - Claude-style model aliases through CLI `--model-alias alias=provider/model` or `AGENT_WORKFLOW_KIT_MODEL_ALIASES=alias=provider/model,...`, preserving `requestedModel` and resolved `model` in events
 - Claude-style per-run agent limits: 16 concurrent agents and 1000 total agent calls by default

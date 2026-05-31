@@ -167,6 +167,40 @@ return { source: "claude-style", child };
     }
   });
 
+  test("command service returns Claude save-dialog final expression values", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-claude-save-dialog-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".claude", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "save-dialog.js"), `
+export const meta = {
+  name: 'save-dialog',
+  description: 'Save dialog shape',
+  phases: [
+    { title: 'Probe' }
+  ]
+}
+
+phase('Probe')
+log('saved through Claude UI')
+
+const result = { ok: true, source: 'save-dialog' }
+result
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow("save-dialog");
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "save-dialog",
+        status: "completed",
+        result: { ok: true, source: "save-dialog" },
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test("command service resolves named project workflow executors from scripts/workflows", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-project-workflows-"));
     try {
