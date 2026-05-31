@@ -15,6 +15,19 @@ Supported implementation packs:
 - Pi: `plugins/pi-workflow-kit` with registered commands/tools
 - Antigravity CLI: `plugins/antigravity-workflow-kit` with one skill per shared command
 
+Install from this standalone checkout:
+
+```sh
+bun link --global
+codex plugin marketplace add .
+codex plugin add codex-workflow-kit@agent-workflow-kit
+gemini extensions install plugins/gemini-workflow-kit --consent --skip-settings
+opencode plugin ./plugins/opencode-workflow-kit --global --force
+grok plugin install "$PWD/plugins/grok-workflow-kit" --trust
+pi install "$PWD/plugins/pi-workflow-kit"
+agy plugin install plugins/antigravity-workflow-kit
+```
+
 Shared runtime package:
 
 - `packages/core`

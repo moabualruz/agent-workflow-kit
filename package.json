@@ -1,6 +1,6 @@
 {
   "name": "agent-workflow-kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Harness-native workflow tools for agent CLIs.",

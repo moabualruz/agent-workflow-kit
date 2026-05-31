@@ -1,5 +1,5 @@
 {
   "name": "gemini-workflow-kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Workflow orchestration commands for Gemini CLI."
 }

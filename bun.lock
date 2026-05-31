@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "@agent-workflow-kit/cli",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "agent-workflow-kit": "./src/cli.ts",
       },
@@ -24,22 +24,22 @@
     },
     "packages/core": {
       "name": "@agent-workflow-kit/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "plugins/gemini-workflow-kit": {
       "name": "gemini-workflow-kit",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "plugins/opencode-workflow-kit": {
       "name": "opencode-workflow-kit",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "peerDependencies": {
         "@opencode-ai/plugin": "*",
       },
     },
     "plugins/pi-workflow-kit": {
       "name": "pi-workflow-kit",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
   },
   "packages": {
