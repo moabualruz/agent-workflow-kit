@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("agent-workflow-kit cli", () => {
-  test("workflow command runs an ad hoc no-write workflow", async () => {
+  test("workflow command runs an ad hoc workflow", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
 
@@ -21,7 +21,31 @@ describe("agent-workflow-kit cli", () => {
     const payload = JSON.parse(result.stdout);
     expect(payload.name).toBe("workflow");
     expect(payload.status).toBe("completed");
-    expect(payload.result).toEqual({ ok: true, task: "inspect repo" });
+    expect(payload.result).toEqual(expect.objectContaining({ ok: true, task: "inspect repo" }));
+  });
+
+  test("workflow command persists generated workflow script for workflow-run", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const generated = await runCli(["workflow", "inspect repo", "--project-root", projectRoot, "--json"]);
+
+    expect(generated.exitCode).toBe(0);
+    const generatedPayload = JSON.parse(generated.stdout);
+    expect(generatedPayload.result.workflow).toEqual({
+      name: "inspect-repo",
+      path: join(projectRoot, ".agent-workflow-kit", "workflows", "inspect-repo.js"),
+    });
+    expect(existsSync(generatedPayload.result.workflow.path)).toBe(true);
+
+    const rerun = await runCli(["workflow-run", generatedPayload.result.workflow.name, "--project-root", projectRoot, "--json"]);
+
+    expect(rerun.exitCode).toBe(0);
+    expect(JSON.parse(rerun.stdout)).toEqual(expect.objectContaining({
+      name: "inspect-repo",
+      status: "completed",
+      result: { ok: true, task: "inspect repo" },
+    }));
   });
 
   test("runs no-write-probe and prints machine-readable status", async () => {

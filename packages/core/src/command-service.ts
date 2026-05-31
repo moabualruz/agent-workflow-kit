@@ -5,6 +5,7 @@ import type { PermissionPolicy } from "./permissions";
 import { createWorkflowRuntime } from "./runtime";
 import { resolveWorkflow } from "./saved-workflows";
 import { createFileStore } from "./store";
+import { saveGeneratedWorkflow } from "./workflow-authoring";
 
 export type WorkflowCommandServiceOptions = {
   projectRoot: string;
@@ -27,12 +28,13 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
   return {
     runAdHocWorkflow(task: string) {
       const normalizedTask = requireText(task, "workflow requires task text");
+      const workflow = saveGeneratedWorkflow(options.projectRoot, normalizedTask);
       return runtime.run({
         name: "workflow",
         script: async ({ phase, log }) => {
           phase("Workflow");
           log(`task: ${normalizedTask}`);
-          return { ok: true, task: normalizedTask };
+          return { ok: true, task: normalizedTask, workflow };
         },
       });
     },

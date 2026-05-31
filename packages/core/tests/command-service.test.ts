@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkflowCommandService, denyDynamicWorkflowPolicy } from "../src/index";
@@ -47,8 +47,31 @@ describe("workflow command service", () => {
     const workflow = await service.runAdHocWorkflow("inspect repo");
     const research = await service.runDeepResearch("compare workflow harnesses");
 
-    expect(workflow.result).toEqual({ ok: true, task: "inspect repo" });
+    expect(workflow.result).toEqual(expect.objectContaining({ ok: true, task: "inspect repo" }));
     expect(research.result).toEqual({ ok: true, question: "compare workflow harnesses" });
+  });
+
+  test("ad hoc workflow persists a generated workflow that workflow-run can invoke", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-command-service-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({ projectRoot });
+
+    const generated = await service.runAdHocWorkflow("inspect repo");
+    const workflow = (generated.result as any).workflow;
+
+    expect(workflow).toEqual({
+      name: "inspect-repo",
+      path: join(projectRoot, ".agent-workflow-kit", "workflows", "inspect-repo.js"),
+    });
+    expect(existsSync(workflow.path)).toBe(true);
+
+    const rerun = await service.runSavedWorkflow(workflow.name);
+
+    expect(rerun).toEqual(expect.objectContaining({
+      name: "inspect-repo",
+      status: "completed",
+      result: { ok: true, task: "inspect repo" },
+    }));
   });
 
   test("applies permission policy before running saved workflows", async () => {

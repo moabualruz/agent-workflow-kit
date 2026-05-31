@@ -1,6 +1,7 @@
-description = "Create and run an Agent Workflow Kit workflow"
+description = "Create, persist, and run an Agent Workflow Kit workflow"
 prompt = """
 Call the shared CLI directly:
 agent-workflow-kit workflow "<task>" --json
+The JSON result includes `result.workflow.name` and `result.workflow.path` for later `workflow-run`.
 Return the run id, status, and artifact path only.
 """

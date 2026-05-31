@@ -1,9 +1,11 @@
-Create and run an Agent Workflow Kit workflow.
+Create, persist, and run an Agent Workflow Kit workflow.
 
 CLI fallback:
 
 ```sh
 agent-workflow-kit workflow "<task>" --json
 ```
+
+The JSON result includes `result.workflow.name` and `result.workflow.path` for later `workflow-run`.
 
 Return only run id, status, and artifact path.

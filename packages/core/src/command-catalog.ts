@@ -26,7 +26,7 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     inputKey: "task",
     argumentMode: "join",
     description: {
-      everywhere: "Run an ad hoc no-write workflow for a task.",
+      everywhere: "Create, persist, and run a generated workflow for a task.",
     },
     dispatch: (service, input) => service.runAdHocWorkflow(requireInputText(input.task, "workflow requires task")),
   },

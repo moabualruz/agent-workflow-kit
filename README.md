@@ -27,6 +27,7 @@ Core module boundaries:
 - `domain.ts`: workflow domain types and runtime interfaces
 - `store.ts`: in-memory and file-backed run/event persistence
 - `runtime.ts`: workflow execution semantics
+- `workflow-authoring.ts`: generated workflow names and project workflow file writes
 - `saved-workflows.ts`: saved workflow lookup and script loading
 - `command-service.ts`: application service for workflow commands
 - `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, and dispatch
@@ -38,6 +39,7 @@ Current parity contract:
 - per-agent model override forwarding and event persistence
 - Claude-style model aliases through CLI `--model-alias alias=provider/model` or `AGENT_WORKFLOW_KIT_MODEL_ALIASES=alias=provider/model,...`, preserving `requestedModel` and resolved `model` in events
 - saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, direct `.js` script paths, with `.claude/workflows/<name>.js` compatibility fallback
+- `workflow "<task>"` writes `.agent-workflow-kit/workflows/<generated-name>.js` and returns that workflow name/path for later `workflow-run`
 - structured workflow args through `workflow-run <workflow> --args-json '{"key":"value"}'`, exposed to scripts as `context.args`
 - append-like progress events through `workflow-events <run-id>`
 - artifact paths for each persisted run (`run.json` and `events.jsonl`)

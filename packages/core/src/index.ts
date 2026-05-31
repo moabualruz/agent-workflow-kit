@@ -7,3 +7,4 @@ export * from "./permissions";
 export * from "./runtime";
 export * from "./saved-workflows";
 export * from "./store";
+export * from "./workflow-authoring";

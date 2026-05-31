@@ -10,6 +10,7 @@ Use plugin commands, CLI tool calls, or script calls to run workflows. Keep inte
 CLI fallback:
 
 ```sh
+agent-workflow-kit workflow "<task>" --json
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-run <workflow> --args-json '{"key":"value"}' --json
 agent-workflow-kit workflow-status <run-id> --json
@@ -21,6 +22,7 @@ agent-workflow-kit deep-research "<question>" --json
 ```
 
 Saved workflow scripts read structured args from `context.args`.
+Generated workflow runs return `result.workflow.name` and `result.workflow.path` for later `workflow-run`.
 
 Executable smoke:
 

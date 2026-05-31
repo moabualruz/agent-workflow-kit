@@ -1,11 +1,11 @@
 ---
 name: workflow
-description: Run an ad hoc Agent Workflow Kit workflow in Antigravity.
+description: Create, persist, and run an Agent Workflow Kit workflow in Antigravity.
 ---
 
 # Workflow
 
-Run an ad hoc no-write workflow through the shared CLI:
+Create, persist, and run a generated workflow through the shared CLI:
 
 ```sh
 agent-workflow-kit workflow "<task>" --json
