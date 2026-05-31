@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   let projectRoot = process.cwd();
   let json = false;
-  const modelAliases: Record<string, string> = {};
+  const modelAliases: Record<string, string> = parseModelAliases(process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES);
   let permissionMode: string | undefined;
   let command: string | undefined;
 
@@ -99,6 +99,20 @@ function permissionPolicyFor(permissionMode: string | undefined): PermissionPoli
   if (!permissionMode || permissionMode === "bypassPermissions") return undefined;
   if (permissionMode === "dontAsk") return denyDynamicWorkflowPolicy;
   throw new Error(`Unsupported permission mode: ${permissionMode}`);
+}
+
+function parseModelAliases(value: string | undefined): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  if (!value?.trim()) return aliases;
+
+  for (const entry of value.split(",")) {
+    const [alias, ...modelParts] = entry.split("=");
+    const model = modelParts.join("=").trim();
+    if (!alias?.trim() || !model) throw new Error("AGENT_WORKFLOW_KIT_MODEL_ALIASES entries must be alias=model");
+    aliases[alias.trim()] = model;
+  }
+
+  return aliases;
 }
 
 function print(value: unknown, json: boolean): void {

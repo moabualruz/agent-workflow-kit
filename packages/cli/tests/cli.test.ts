@@ -192,10 +192,42 @@ export default async function ({ agent }) {
     expect(events).toContain("\"requestedModel\":\"haiku\"");
     expect(events).toContain("\"model\":\"provider/fast-worker\"");
   });
+
+  test("model aliases can be inherited from the harness environment", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "env-model-alias.js"), `
+export default async function ({ agent }) {
+  return agent("model probe", { model: "sonnet" });
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "env-model-alias",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ], {
+      AGENT_WORKFLOW_KIT_MODEL_ALIASES: "sonnet=provider/balanced-worker",
+    });
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
+    expect(events).toContain("\"requestedModel\":\"sonnet\"");
+    expect(events).toContain("\"model\":\"provider/balanced-worker\"");
+  });
 });
 
-async function runCli(args: string[]) {
+async function runCli(args: string[], env: Record<string, string> = {}) {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
+    env: {
+      ...process.env,
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
