@@ -1,0 +1,34 @@
+---
+name: workflow-run
+description: Run a saved Agent Workflow Kit workflow in Antigravity.
+---
+
+# Workflow Run
+
+Run saved workflows through the shared CLI:
+
+```sh
+agent-workflow-kit workflow-run <workflow> --json
+agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-events <run-id> --json
+agent-workflow-kit workflow-resume <run-id> --json
+agent-workflow-kit workflow-stop <run-id> --json
+agent-workflow-kit workflows --json
+agent-workflow-kit deep-research "<question>" --json
+```
+
+Use `--project-root "${AGENT_WORKFLOW_KIT_PROJECT_ROOT:-$PWD}"` when the active Antigravity workspace root is ambiguous.
+
+Executable smoke:
+
+```sh
+run_json="$(agent-workflow-kit workflow-run no-write-probe --json)"
+run_id="$(printf '%s' "$run_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.runId);')"
+printf '%s\n' "$run_json"
+agent-workflow-kit workflow-status "$run_id" --json
+agent-workflow-kit workflow-events "$run_id" --json
+agent-workflow-kit workflow-resume "$run_id" --json
+agent-workflow-kit workflow-stop "$run_id" --json
+agent-workflow-kit workflows --json
+agent-workflow-kit deep-research "file-command-smoke" --json
+```

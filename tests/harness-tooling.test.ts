@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { workflowCommandNames, workflowToolNames } from "../packages/core/src/index";
 import { server as openCodeWorkflowServer } from "../plugins/opencode-workflow-kit/src/index";
 import workflowKitExtension from "../plugins/pi-workflow-kit/extensions/index";
 
@@ -41,16 +42,7 @@ describe("harness direct workflow tools", () => {
       worktree: projectRoot,
     } as any);
 
-    expect(Object.keys(hooks.tool ?? {})).toEqual([
-      "workflow",
-      "workflow_run",
-      "workflow_status",
-      "workflow_events",
-      "workflow_resume",
-      "workflow_stop",
-      "workflows",
-      "deep_research",
-    ]);
+    expect(Object.keys(hooks.tool ?? {})).toEqual(workflowToolNames);
 
     const result = await hooks.tool?.workflow_run?.execute({
       workflow: "no-write-probe",
@@ -82,25 +74,8 @@ describe("harness direct workflow tools", () => {
     });
 
     expect(extension.name).toBe("pi-workflow-kit");
-    expect(commands.map((command) => command.name)).toEqual([
-      "workflow",
-      "workflow-run",
-      "workflow-status",
-      "workflow-events",
-      "workflow-resume",
-      "workflow-stop",
-      "workflows",
-      "deep-research",
-    ]);
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "workflow_run",
-      "workflow_status",
-      "workflow_events",
-      "workflow_resume",
-      "workflow_stop",
-      "workflows",
-      "deep_research",
-    ]);
+    expect(commands.map((command) => command.name)).toEqual(workflowCommandNames);
+    expect(tools.map((tool) => tool.name)).toEqual(workflowToolNames);
 
     const commandRun = await commands.find((command) => command.name === "workflow-run")?.handler("no-write-probe");
     expect(commandRun).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
@@ -114,5 +89,16 @@ describe("harness direct workflow tools", () => {
       content: [{ type: "text", text: expect.stringContaining("\"status\":\"completed\"") }],
       details: expect.objectContaining({ status: "completed", result: { ok: true } }),
     }));
+  });
+
+  test("Antigravity plugin is skills-only and CLI based", () => {
+    const pluginRoot = join(repoRoot, "plugins/antigravity-workflow-kit");
+    const plugin = JSON.parse(readFileSync(join(pluginRoot, "plugin.json"), "utf8"));
+    const skill = readFileSync(join(pluginRoot, "skills/workflow-run/SKILL.md"), "utf8");
+
+    expect(plugin.name).toBe("antigravity-workflow-kit");
+    expect(existsSync(join(pluginRoot, "mcp_config.json"))).toBe(false);
+    expect(skill).toContain("agent-workflow-kit workflow-run");
+    expect(skill.toLowerCase()).not.toContain("mcp");
   });
 });

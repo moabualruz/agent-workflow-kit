@@ -13,11 +13,23 @@ Supported implementation packs:
 - OpenCode: `plugins/opencode-workflow-kit`
 - Grok Build: `plugins/grok-workflow-kit`
 - Pi: `plugins/pi-workflow-kit` with registered commands/tools
+- Antigravity CLI: `plugins/antigravity-workflow-kit` with one skill per shared command
 
 Shared runtime package:
 
 - `packages/core`
 - `createWorkflowCommandService()` for CLI, command, skill, script-call, and extension adapters
+- `workflowCommandCatalog` as the single public command/tool registry
+- `dispatchWorkflowCommand()` as the shared adapter boundary for CLI and native tools
+
+Core module boundaries:
+
+- `domain.ts`: workflow domain types and runtime interfaces
+- `store.ts`: in-memory and file-backed run/event persistence
+- `runtime.ts`: workflow execution semantics
+- `saved-workflows.ts`: saved workflow lookup and script loading
+- `command-service.ts`: application service for workflow commands
+- `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, and dispatch
 
 Current parity contract:
 

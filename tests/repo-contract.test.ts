@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { workflowCommandNames } from "../packages/core/src/index";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 
@@ -12,6 +13,7 @@ describe("standalone repository contract", () => {
       "plugins/opencode-workflow-kit",
       "plugins/grok-workflow-kit",
       "plugins/pi-workflow-kit",
+      "plugins/antigravity-workflow-kit",
     ]) {
       expect(existsSync(join(repoRoot, dir))).toBe(true);
       expect(existsSync(join(repoRoot, dir, "README.md"))).toBe(true);
@@ -84,6 +86,7 @@ describe("standalone repository contract", () => {
       "plugins/opencode-workflow-kit/commands/workflow-run.md",
       "plugins/grok-workflow-kit/commands/workflow-run.md",
       "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/antigravity-workflow-kit/skills/workflow-run/SKILL.md",
     ];
 
     for (const file of commandFiles) {
@@ -99,16 +102,6 @@ describe("standalone repository contract", () => {
   });
 
   test("file-command harnesses expose every shared workflow command", () => {
-    const expected = [
-      "workflow",
-      "workflows",
-      "workflow-run",
-      "workflow-status",
-      "workflow-events",
-      "workflow-resume",
-      "workflow-stop",
-      "deep-research",
-    ];
     const harnesses = [
       { root: "plugins/gemini-workflow-kit/commands", extension: ".toml" },
       { root: "plugins/opencode-workflow-kit/commands", extension: ".md" },
@@ -116,11 +109,21 @@ describe("standalone repository contract", () => {
     ];
 
     for (const harness of harnesses) {
-      for (const command of expected) {
+      for (const command of workflowCommandNames) {
         const file = join(repoRoot, harness.root, `${command}${harness.extension}`);
         expect(existsSync(file), `${harness.root}/${command}${harness.extension}`).toBe(true);
         expect(readFileSync(file, "utf8")).toContain(`agent-workflow-kit ${command}`);
       }
+    }
+  });
+
+  test("Antigravity plugin exposes every shared workflow command as a skill slash-command", () => {
+    for (const command of workflowCommandNames) {
+      const file = join(repoRoot, "plugins/antigravity-workflow-kit/skills", command, "SKILL.md");
+      expect(existsSync(file), `antigravity skill ${command}`).toBe(true);
+      const text = readFileSync(file, "utf8");
+      expect(text).toContain(`name: ${command}`);
+      expect(text).toContain(`agent-workflow-kit ${command}`);
     }
   });
 

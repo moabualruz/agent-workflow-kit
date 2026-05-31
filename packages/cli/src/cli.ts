@@ -3,7 +3,11 @@
 import {
   createWorkflowCommandService,
   denyDynamicWorkflowPolicy,
+  dispatchWorkflowCommand,
+  findWorkflowCommandSpec,
+  inputForCliArguments,
   type PermissionPolicy,
+  workflowCommandNames,
 } from "@agent-workflow-kit/core";
 
 type ParsedArgs = {
@@ -25,62 +29,12 @@ async function main(argv: string[]) {
     projectRoot: args.projectRoot,
     permissionPolicy: permissionPolicyFor(args.permissionMode),
   });
+  const spec = findWorkflowCommandSpec(args.command);
 
-  switch (args.command) {
-    case "workflow": {
-      const task = args.positional.join(" ").trim();
-      const run = await service.runAdHocWorkflow(task);
-      print(run, args.json);
-      return;
-    }
+  if (!spec) throw new Error(`Expected command: ${workflowCommandNames.join(", ")}`);
 
-    case "workflow-run": {
-      const name = args.positional[0];
-      const run = await service.runSavedWorkflow(name ?? "");
-      print(run, args.json);
-      return;
-    }
-
-    case "workflow-status": {
-      const runId = args.positional[0];
-      const run = service.getRun(runId ?? "");
-      print(run, args.json);
-      return;
-    }
-
-    case "workflow-events": {
-      const runId = args.positional[0];
-      print(service.eventsFor(runId ?? ""), args.json);
-      return;
-    }
-
-    case "workflows": {
-      print(service.listRuns(), args.json);
-      return;
-    }
-
-    case "workflow-resume": {
-      const runId = args.positional[0];
-      print(service.resumeRun(runId ?? ""), args.json);
-      return;
-    }
-
-    case "workflow-stop": {
-      const runId = args.positional[0];
-      print(service.stopRun(runId ?? ""), args.json);
-      return;
-    }
-
-    case "deep-research": {
-      const question = args.positional.join(" ").trim();
-      const run = await service.runDeepResearch(question);
-      print(run, args.json);
-      return;
-    }
-
-    default:
-      throw new Error("Expected command: workflow, workflow-run, workflow-status, workflow-events, workflow-resume, workflow-stop, workflows, deep-research");
-  }
+  const result = await dispatchWorkflowCommand(service, spec.name, inputForCliArguments(spec, args.positional));
+  print(result, args.json);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {

@@ -19,6 +19,7 @@ describe("file-command harness smoke blocks", () => {
       "plugins/grok-workflow-kit/commands/workflow-run.md",
       "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
       "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/antigravity-workflow-kit/skills/workflow-run/SKILL.md",
     ]) {
       const smoke = extractExecutableSmoke(readFileSync(join(repoRoot, file), "utf8"));
       const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-command-project-"));

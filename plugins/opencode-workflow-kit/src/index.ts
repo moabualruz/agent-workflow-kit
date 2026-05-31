@@ -1,91 +1,29 @@
 import { tool, type Plugin } from "@opencode-ai/plugin";
-import { createWorkflowCommandService } from "../../../packages/core/src/index";
+import {
+  createWorkflowCommandService,
+  dispatchWorkflowCommand,
+  workflowCommandCatalog,
+  type WorkflowCatalogEntry,
+} from "../../../packages/core/src/index";
 
 export const server: Plugin = async (input) => {
   const projectRoot = input.directory || process.cwd();
 
   return {
-    tool: {
-      workflow: tool({
-        description: "Run an ad hoc no-write workflow for a task.",
-        args: {
-          task: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
+    tool: Object.fromEntries(workflowCommandCatalog.map((command) => [
+      command.toolName,
+      tool({
+        description: command.description.everywhere,
+        args: toolArgs(command),
         async execute(args, context) {
-          return stringify(await service(args.projectRoot, context.directory ?? projectRoot).runAdHocWorkflow(args.task));
+          return stringify(await dispatchWorkflowCommand(
+            service(readOptionalString(args.projectRoot), context.directory ?? projectRoot),
+            command.name,
+            args,
+          ));
         },
       }),
-      workflow_run: tool({
-        description: "Run a saved Agent Workflow Kit workflow.",
-        args: {
-          workflow: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(await service(args.projectRoot, context.directory ?? projectRoot).runSavedWorkflow(args.workflow));
-        },
-      }),
-      workflow_status: tool({
-        description: "Read workflow run status from persisted state.",
-        args: {
-          runId: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(service(args.projectRoot, context.directory ?? projectRoot).getRun(args.runId));
-        },
-      }),
-      workflow_events: tool({
-        description: "Read workflow progress events from persisted state.",
-        args: {
-          runId: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(service(args.projectRoot, context.directory ?? projectRoot).eventsFor(args.runId));
-        },
-      }),
-      workflow_resume: tool({
-        description: "Resume a stopped workflow record without deleting artifacts.",
-        args: {
-          runId: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(service(args.projectRoot, context.directory ?? projectRoot).resumeRun(args.runId));
-        },
-      }),
-      workflow_stop: tool({
-        description: "Stop a workflow record while keeping it resumable.",
-        args: {
-          runId: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(service(args.projectRoot, context.directory ?? projectRoot).stopRun(args.runId));
-        },
-      }),
-      workflows: tool({
-        description: "List persisted workflow runs without transcript spam.",
-        args: {
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(service(args.projectRoot, context.directory ?? projectRoot).listRuns());
-        },
-      }),
-      deep_research: tool({
-        description: "Run the bundled deep-research workflow.",
-        args: {
-          question: tool.schema.string(),
-          projectRoot: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          return stringify(await service(args.projectRoot, context.directory ?? projectRoot).runDeepResearch(args.question));
-        },
-      }),
-    },
+    ])),
   };
 };
 
@@ -100,6 +38,18 @@ function service(projectRoot: string | undefined, fallbackRoot: string) {
   return createWorkflowCommandService({
     projectRoot: projectRoot?.trim() || fallbackRoot,
   });
+}
+
+function toolArgs(command: WorkflowCatalogEntry) {
+  const args: Record<string, any> = {
+    projectRoot: tool.schema.string().optional(),
+  };
+  if (command.inputKey) args[command.inputKey] = tool.schema.string();
+  return args;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function stringify(value: unknown): string {
