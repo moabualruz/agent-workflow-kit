@@ -1,4 +1,5 @@
 import type { WorkflowCommandService } from "./command-service";
+import type { WorkflowArgs } from "./domain";
 import { requireInputText } from "./errors";
 
 export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question";
@@ -10,6 +11,7 @@ export type WorkflowCommandSpec = {
   title: string;
   inputKey?: WorkflowCommandInputKey;
   argumentMode?: WorkflowCommandArgumentMode;
+  acceptsArgs?: boolean;
   description: {
     everywhere: string;
   };
@@ -34,10 +36,14 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     title: "Workflow Run",
     inputKey: "workflow",
     argumentMode: "first",
+    acceptsArgs: true,
     description: {
       everywhere: "Run a saved Agent Workflow Kit workflow.",
     },
-    dispatch: (service, input) => service.runSavedWorkflow(requireInputText(input.workflow, "workflow-run requires workflow")),
+    dispatch: (service, input) => service.runSavedWorkflow(
+      requireInputText(input.workflow, "workflow-run requires workflow"),
+      readWorkflowArgs(input.args),
+    ),
   },
   {
     name: "workflow-status",
@@ -130,4 +136,14 @@ export function inputForCliArguments(spec: WorkflowCatalogEntry, positional: str
   if (!spec.inputKey) return {};
   if (spec.argumentMode === "join") return { [spec.inputKey]: positional.join(" ").trim() };
   return { [spec.inputKey]: positional[0] ?? "" };
+}
+
+function readWorkflowArgs(value: unknown): WorkflowArgs {
+  if (value === undefined) return {};
+  if (isPlainRecord(value)) return value;
+  throw new Error("workflow-run args must be a JSON object");
+}
+
+function isPlainRecord(value: unknown): value is WorkflowArgs {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -36,9 +36,12 @@ export type AgentOptions = {
   schema?: unknown;
 };
 
+export type WorkflowArgs = Record<string, unknown>;
+
 export type WorkflowScript = (context: WorkflowContext) => unknown | Promise<unknown>;
 
 export type WorkflowContext = {
+  args: WorkflowArgs;
   agent: (prompt: string, options?: AgentOptions) => Promise<unknown>;
   phase: (title: string) => void;
   parallel: <T>(tasks: Array<() => Promise<T> | T>) => Promise<T[]>;
@@ -53,11 +56,13 @@ export type WorkflowContext = {
 export type WorkflowInvocation = {
   name: string;
   script: WorkflowScript;
+  args?: WorkflowArgs;
 };
 
 export type RunRequest = {
   name: string;
   script: WorkflowScript;
+  args?: WorkflowArgs;
 };
 
 export type WorkflowStore = {

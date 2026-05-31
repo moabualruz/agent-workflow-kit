@@ -45,6 +45,7 @@ function toolArgs(command: WorkflowCatalogEntry) {
     projectRoot: tool.schema.string().optional(),
   };
   if (command.inputKey) args[command.inputKey] = tool.schema.string();
+  if (command.acceptsArgs) args.args = tool.schema.record(tool.schema.string(), tool.schema.unknown()).optional();
   return args;
 }
 

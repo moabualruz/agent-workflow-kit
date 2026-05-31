@@ -111,6 +111,7 @@ function schemaFor(command: WorkflowCatalogEntry) {
   const required = command.inputKey ? [command.inputKey] : [];
   const properties: Record<string, unknown> = { projectRoot: stringSchema() };
   if (command.inputKey) properties[command.inputKey] = stringSchema();
+  if (command.acceptsArgs) properties.args = objectSchema();
   return schema(required, properties);
 }
 
@@ -125,6 +126,10 @@ function schema(required: string[], properties: Record<string, unknown>) {
 
 function stringSchema() {
   return { type: "string" };
+}
+
+function objectSchema() {
+  return { type: "object", additionalProperties: true };
 }
 
 function readText(value: unknown): string | undefined {

@@ -65,6 +65,30 @@ export default async function ({ phase, log, agent }) {
     }
   });
 
+  test("command service passes args to project saved workflow files", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-saved-workflows-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "args-probe.js"), `
+export default function ({ args }) {
+  return { args };
+}
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow("args-probe", { tenantId: "tenant-1" });
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "args-probe",
+        status: "completed",
+        result: { args: { tenantId: "tenant-1" } },
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test("command service runs direct workflow script paths", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-saved-workflows-"));
     try {

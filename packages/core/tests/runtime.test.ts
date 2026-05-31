@@ -85,6 +85,33 @@ describe("workflow runtime parity contract", () => {
     }));
   });
 
+  test("workflow context exposes run args to parent and child scripts", async () => {
+    const store = createMemoryStore();
+    const runtime = createWorkflowRuntime({ store, agent: async () => ({}) });
+
+    const child: WorkflowScript = async ({ args }) => ({ child: args });
+    const parent: WorkflowScript = async ({ args, workflow }) => ({
+      parent: args,
+      nested: await workflow({
+        name: "child-with-args",
+        script: child,
+        args: { childId: args.parentId },
+      }),
+    });
+
+    const run = await runtime.run({
+      name: "parent-with-args",
+      script: parent,
+      args: { parentId: "parent-1" },
+    });
+
+    expect(run.status).toBe("completed");
+    expect(run.result).toEqual({
+      parent: { parentId: "parent-1" },
+      nested: { child: { childId: "parent-1" } },
+    });
+  });
+
   test("uncaught agent error fails run state even when caller process could still exit zero", async () => {
     const store = createMemoryStore();
     const runtime = createWorkflowRuntime({

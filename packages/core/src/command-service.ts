@@ -1,4 +1,4 @@
-import type { AgentFunction } from "./domain";
+import type { AgentFunction, WorkflowArgs } from "./domain";
 import { requireText } from "./errors";
 import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
@@ -37,10 +37,10 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
       });
     },
 
-    async runSavedWorkflow(name: string) {
+    async runSavedWorkflow(name: string, args: WorkflowArgs = {}) {
       const workflowName = requireText(name, "workflow-run requires workflow name");
       const workflow = await resolveWorkflow(options.projectRoot, workflowName);
-      return runtime.run(workflow);
+      return runtime.run({ ...workflow, args });
     },
 
     getRun(runId: string) {

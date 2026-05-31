@@ -1,4 +1,4 @@
-import type { RunRequest, WorkflowContext, WorkflowEvent, WorkflowStore } from "./domain";
+import type { RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
 import type { ModelPolicy, ModelResolution } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
@@ -26,7 +26,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       }
 
       const counters = { phase: 0, agent: 0 };
-      const context = createContext(run.runId, options, counters);
+      const context = createContext(run.runId, options, counters, request.args ?? {});
 
       try {
         const result = await request.script(context);
@@ -42,6 +42,7 @@ function createContext(
   runId: string,
   options: WorkflowRuntimeOptions,
   counters: { phase: number; agent: number },
+  args: WorkflowArgs,
 ): WorkflowContext {
   const runAgent = async (prompt: string, agentOptions?: { model?: string; schema?: unknown }) => {
     const index = ++counters.agent;
@@ -59,6 +60,7 @@ function createContext(
   };
 
   return {
+    args,
     agent: runAgent,
 
     phase(title: string): void {
@@ -94,7 +96,7 @@ function createContext(
         kind: "child",
       });
 
-      return request.script(createContext(runId, options, counters));
+      return request.script(createContext(runId, options, counters, request.args ?? {}));
     },
 
     log(message: string): void {

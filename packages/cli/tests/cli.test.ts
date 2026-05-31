@@ -87,6 +87,36 @@ export default function ({ phase, log }) {
     expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("CLI Saved File");
   });
 
+  test("workflow-run forwards structured args to saved workflow files", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "args-probe.js"), `
+export default function ({ args }) {
+  return { args };
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "args-probe",
+      "--args-json",
+      "{\"tenantId\":\"tenant-1\"}",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toEqual(expect.objectContaining({
+      name: "args-probe",
+      status: "completed",
+      result: { args: { tenantId: "tenant-1" } },
+    }));
+  });
+
   test("workflow-run executes direct workflow script paths", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);

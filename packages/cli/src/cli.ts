@@ -16,6 +16,7 @@ type ParsedArgs = {
   positional: string[];
   projectRoot: string;
   json: boolean;
+  argsJson?: string | undefined;
   modelAliases: Record<string, string>;
   permissionMode?: string | undefined;
 };
@@ -36,7 +37,8 @@ async function main(argv: string[]) {
 
   if (!spec) throw new Error(`Expected command: ${workflowCommandNames.join(", ")}`);
 
-  const result = await dispatchWorkflowCommand(service, spec.name, inputForCliArguments(spec, args.positional));
+  const input = inputForCliCommand(spec, args);
+  const result = await dispatchWorkflowCommand(service, spec.name, input);
   print(result, args.json);
 }
 
@@ -45,6 +47,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let projectRoot = process.cwd();
   let json = false;
   const modelAliases: Record<string, string> = parseModelAliases(process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES);
+  let argsJson: string | undefined;
   let permissionMode: string | undefined;
   let command: string | undefined;
 
@@ -73,6 +76,14 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === "--args-json") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--args-json requires a value");
+      argsJson = value;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--model-alias") {
       const value = argv[index + 1];
       if (!value) throw new Error("--model-alias requires a value");
@@ -92,7 +103,24 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json, modelAliases, permissionMode };
+  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode };
+}
+
+function inputForCliCommand(
+  spec: NonNullable<ReturnType<typeof findWorkflowCommandSpec>>,
+  args: ParsedArgs,
+): Record<string, unknown> {
+  const input = inputForCliArguments(spec, args.positional);
+  const positionalArgsJson = spec.acceptsArgs ? args.positional[1] : undefined;
+  const argsJson = args.argsJson ?? positionalArgsJson;
+
+  if (!argsJson) return input;
+  if (!spec.acceptsArgs) throw new Error(`--args-json does not apply to ${spec.name}`);
+
+  return {
+    ...input,
+    args: parseWorkflowArgsJson(argsJson),
+  };
 }
 
 function permissionPolicyFor(permissionMode: string | undefined): PermissionPolicy | undefined {
@@ -113,6 +141,22 @@ function parseModelAliases(value: string | undefined): Record<string, string> {
   }
 
   return aliases;
+}
+
+function parseWorkflowArgsJson(value: string): Record<string, unknown> {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("--args-json requires valid JSON");
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("--args-json requires a JSON object");
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 function print(value: unknown, json: boolean): void {
