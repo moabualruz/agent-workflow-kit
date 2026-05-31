@@ -87,6 +87,30 @@ export default function ({ phase, log }) {
     expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("CLI Saved File");
   });
 
+  test("workflow-run executes direct workflow script paths", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const scriptPath = join(projectRoot, "cli-direct-path.js");
+    writeFileSync(scriptPath, `
+export default function ({ phase, log }) {
+  phase("CLI Direct Path");
+  log("cli direct path workflow entered");
+  return { source: "cli-script-path" };
+}
+`);
+
+    const result = await runCli(["workflow-run", scriptPath, "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toEqual(expect.objectContaining({
+      name: "cli-direct-path",
+      status: "completed",
+      result: { source: "cli-script-path" },
+    }));
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("CLI Direct Path");
+  });
+
   test("reads run status from persisted state", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);

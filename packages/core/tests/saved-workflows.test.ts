@@ -64,4 +64,34 @@ export default async function ({ phase, log, agent }) {
       rmSync(projectRoot, { recursive: true, force: true });
     }
   });
+
+  test("command service runs direct workflow script paths", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-saved-workflows-"));
+    try {
+      const scriptPath = join(projectRoot, "direct-path.js");
+      writeFileSync(scriptPath, `
+export default async function ({ phase, log }) {
+  phase("Direct Path");
+  log("direct path workflow entered");
+  return { source: "script-path" };
+}
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow(scriptPath);
+      const events = service.eventsFor(run.runId);
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "direct-path",
+        status: "completed",
+        result: { source: "script-path" },
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "phase",
+        title: "Direct Path",
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
 });

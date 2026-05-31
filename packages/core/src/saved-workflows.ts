@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { WorkflowScript } from "./domain";
 
@@ -7,6 +7,11 @@ export type WorkflowScope = "project" | "personal";
 
 export type SavedWorkflow = {
   scope?: WorkflowScope;
+  name: string;
+  script: WorkflowScript;
+};
+
+export type ResolvedWorkflowScript = {
   name: string;
   script: WorkflowScript;
 };
@@ -33,14 +38,31 @@ export function createMemoryWorkflowRegistry() {
 }
 
 export async function resolveWorkflowScript(projectRoot: string, workflowName: string): Promise<WorkflowScript> {
-  assertWorkflowName(workflowName);
-  const workflowPath = findWorkflowFile(projectRoot, workflowName);
-  if (workflowPath) return loadWorkflowScript(workflowPath);
+  return (await resolveWorkflow(projectRoot, workflowName)).script;
+}
 
-  const builtIn = builtInWorkflows.get(workflowName);
-  if (builtIn) return builtIn;
+export async function resolveWorkflow(projectRoot: string, workflowRef: string): Promise<ResolvedWorkflowScript> {
+  const directPath = directWorkflowPath(projectRoot, workflowRef);
+  if (directPath) {
+    return {
+      name: workflowNameFromPath(directPath),
+      script: await loadWorkflowScript(directPath),
+    };
+  }
 
-  throw new Error(`Unknown workflow: ${workflowName}`);
+  assertWorkflowName(workflowRef);
+  const workflowPath = findWorkflowFile(projectRoot, workflowRef);
+  if (workflowPath) {
+    return {
+      name: workflowRef,
+      script: await loadWorkflowScript(workflowPath),
+    };
+  }
+
+  const builtIn = builtInWorkflows.get(workflowRef);
+  if (builtIn) return { name: workflowRef, script: builtIn };
+
+  throw new Error(`Unknown workflow: ${workflowRef}`);
 }
 
 const builtInWorkflows = new Map<string, WorkflowScript>([
@@ -60,6 +82,20 @@ function findWorkflowFile(projectRoot: string, workflowName: string): string | u
     join(projectRoot, ".claude", "workflows", `${workflowName}.js`),
   ];
   return candidates.find((candidate) => existsSync(candidate));
+}
+
+function directWorkflowPath(projectRoot: string, workflowRef: string): string | undefined {
+  if (!looksLikeScriptPath(workflowRef)) return undefined;
+  const candidate = isAbsolute(workflowRef) ? workflowRef : resolve(projectRoot, workflowRef);
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+function looksLikeScriptPath(workflowRef: string): boolean {
+  return workflowRef.endsWith(".js") && (workflowRef.includes("/") || workflowRef.startsWith("."));
+}
+
+function workflowNameFromPath(workflowPath: string): string {
+  return basename(workflowPath).replace(/\.js$/, "");
 }
 
 async function loadWorkflowScript(workflowPath: string): Promise<WorkflowScript> {

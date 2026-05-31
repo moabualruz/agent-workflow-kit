@@ -3,7 +3,7 @@ import { requireText } from "./errors";
 import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 import { createWorkflowRuntime } from "./runtime";
-import { resolveWorkflowScript } from "./saved-workflows";
+import { resolveWorkflow } from "./saved-workflows";
 import { createFileStore } from "./store";
 
 export type WorkflowCommandServiceOptions = {
@@ -39,8 +39,8 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
 
     async runSavedWorkflow(name: string) {
       const workflowName = requireText(name, "workflow-run requires workflow name");
-      const script = await resolveWorkflowScript(options.projectRoot, workflowName);
-      return runtime.run({ name: workflowName, script });
+      const workflow = await resolveWorkflow(options.projectRoot, workflowName);
+      return runtime.run(workflow);
     },
 
     getRun(runId: string) {
