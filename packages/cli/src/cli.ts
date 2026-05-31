@@ -7,6 +7,7 @@ import {
   dispatchWorkflowCommand,
   findWorkflowCommandSpec,
   inputForCliArguments,
+  parseModelAliases,
   type PermissionPolicy,
   workflowCommandNames,
 } from "@agent-workflow-kit/core";
@@ -127,20 +128,6 @@ function permissionPolicyFor(permissionMode: string | undefined): PermissionPoli
   if (!permissionMode || permissionMode === "bypassPermissions") return undefined;
   if (permissionMode === "dontAsk") return denyDynamicWorkflowPolicy;
   throw new Error(`Unsupported permission mode: ${permissionMode}`);
-}
-
-function parseModelAliases(value: string | undefined): Record<string, string> {
-  const aliases: Record<string, string> = {};
-  if (!value?.trim()) return aliases;
-
-  for (const entry of value.split(",")) {
-    const [alias, ...modelParts] = entry.split("=");
-    const model = modelParts.join("=").trim();
-    if (!alias?.trim() || !model) throw new Error("AGENT_WORKFLOW_KIT_MODEL_ALIASES entries must be alias=model");
-    aliases[alias.trim()] = model;
-  }
-
-  return aliases;
 }
 
 function parseWorkflowArgsJson(value: string): Record<string, unknown> {

@@ -19,3 +19,17 @@ export function createAliasModelPolicy(aliases: Record<string, string>): ModelPo
     },
   };
 }
+
+export function parseModelAliases(value: string | undefined): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  if (!value?.trim()) return aliases;
+
+  for (const entry of value.split(",")) {
+    const [alias, ...modelParts] = entry.split("=");
+    const model = modelParts.join("=").trim();
+    if (!alias?.trim() || !model) throw new Error("model alias entries must be alias=model");
+    aliases[alias.trim()] = model;
+  }
+
+  return aliases;
+}

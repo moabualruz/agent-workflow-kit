@@ -1,7 +1,9 @@
 import { tool, type Plugin } from "@opencode-ai/plugin";
 import {
+  createAliasModelPolicy,
   createWorkflowCommandService,
   dispatchWorkflowCommand,
+  parseModelAliases,
   workflowCommandCatalog,
   type WorkflowCatalogEntry,
 } from "../../../packages/core/src/index";
@@ -37,6 +39,7 @@ export default workflowKitPlugin;
 function service(projectRoot: string | undefined, fallbackRoot: string) {
   return createWorkflowCommandService({
     projectRoot: projectRoot?.trim() || fallbackRoot,
+    modelPolicy: createAliasModelPolicy(parseModelAliases(process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES)),
   });
 }
 

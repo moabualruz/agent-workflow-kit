@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { workflowCommandNames, workflowToolNames } from "../packages/core/src/index";
@@ -44,6 +44,41 @@ describe("harness direct workflow tools", () => {
 
     expect(Object.keys(hooks.tool ?? {})).toEqual(workflowToolNames);
 
+    const generated = JSON.parse(String(await hooks.tool?.workflow?.execute({
+      task: "native generated",
+      projectRoot,
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any)));
+    const generatedName = generated.result.workflow.name;
+
+    expect(generated).toEqual(expect.objectContaining({
+      name: "workflow",
+      status: "completed",
+      result: expect.objectContaining({
+        task: "native generated",
+        workflow: {
+          name: "native-generated",
+          path: join(projectRoot, ".agent-workflow-kit", "workflows", "native-generated.js"),
+        },
+      }),
+    }));
+
+    const generatedRun = JSON.parse(String(await hooks.tool?.workflow_run?.execute({
+      workflow: generatedName,
+      projectRoot,
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any)));
+
+    expect(generatedRun).toEqual(expect.objectContaining({
+      name: "native-generated",
+      status: "completed",
+      result: { ok: true, task: "native generated" },
+    }));
+
     const result = await hooks.tool?.workflow_run?.execute({
       workflow: "no-write-probe",
       projectRoot,
@@ -56,6 +91,60 @@ describe("harness direct workflow tools", () => {
       status: "completed",
       result: { ok: true },
     }));
+
+    const events = JSON.parse(String(await hooks.tool?.workflow_events?.execute({
+      runId: generatedRun.runId,
+      projectRoot,
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any)));
+    expect(events).toContainEqual(expect.objectContaining({ runId: generatedRun.runId, type: "run:completed" }));
+  });
+
+  test("OpenCode native tools inherit model aliases from the harness environment", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-opencode-tools-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "model-alias.js"), `
+export default async function ({ agent }) {
+  return agent("model probe", { model: "sonnet" });
+}
+`);
+    const previousAliases = process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES;
+    process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES = "sonnet=provider/balanced-worker";
+
+    try {
+      const hooks = await openCodeWorkflowServer({
+        directory: projectRoot,
+        worktree: projectRoot,
+      } as any);
+
+      const run = JSON.parse(String(await hooks.tool?.workflow_run?.execute({
+        workflow: "model-alias",
+        projectRoot,
+      }, {
+        directory: projectRoot,
+        worktree: projectRoot,
+      } as any)));
+      const events = JSON.parse(String(await hooks.tool?.workflow_events?.execute({
+        runId: run.runId,
+        projectRoot,
+      }, {
+        directory: projectRoot,
+        worktree: projectRoot,
+      } as any)));
+
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "agent:start",
+        requestedModel: "sonnet",
+        model: "provider/balanced-worker",
+      }));
+    } finally {
+      if (previousAliases === undefined) delete process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES;
+      else process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES = previousAliases;
+    }
   });
 
   test("Pi extension registers workflow commands and tools against the host API", async () => {
@@ -77,8 +166,58 @@ describe("harness direct workflow tools", () => {
     expect(commands.map((command) => command.name)).toEqual(workflowCommandNames);
     expect(tools.map((tool) => tool.name)).toEqual(workflowToolNames);
 
+    const generated = await commands.find((command) => command.name === "workflow")?.handler("native generated");
+    const generatedWorkflow = (generated as any).result.workflow;
+
+    expect(generated).toEqual(expect.objectContaining({
+      name: "workflow",
+      status: "completed",
+      result: expect.objectContaining({
+        task: "native generated",
+        workflow: {
+          name: "native-generated",
+          path: join(process.cwd(), ".agent-workflow-kit", "workflows", "native-generated.js"),
+        },
+      }),
+    }));
+
+    const generatedRun = await commands.find((command) => command.name === "workflow-run")?.handler(generatedWorkflow.name);
+
+    expect(generatedRun).toEqual(expect.objectContaining({
+      name: "native-generated",
+      status: "completed",
+      result: { ok: true, task: "native generated" },
+    }));
+
     const commandRun = await commands.find((command) => command.name === "workflow-run")?.handler("no-write-probe");
     expect(commandRun).toEqual(expect.objectContaining({ status: "completed", result: { ok: true } }));
+
+    const toolGenerated = await tools.find((tool) => tool.name === "workflow")?.execute("call-generated", {
+      task: "tool generated",
+      projectRoot,
+    });
+    const toolGeneratedName = (toolGenerated as any).details.result.workflow.name;
+
+    expect(toolGenerated).toEqual(expect.objectContaining({
+      content: [{ type: "text", text: expect.stringContaining("\"name\":\"workflow\"") }],
+      details: expect.objectContaining({
+        status: "completed",
+        result: expect.objectContaining({ task: "tool generated" }),
+      }),
+    }));
+
+    const toolGeneratedRun = await tools.find((tool) => tool.name === "workflow_run")?.execute("call-generated-run", {
+      workflow: toolGeneratedName,
+      projectRoot,
+    });
+
+    expect(toolGeneratedRun).toEqual(expect.objectContaining({
+      details: expect.objectContaining({
+        name: "tool-generated",
+        status: "completed",
+        result: { ok: true, task: "tool generated" },
+      }),
+    }));
 
     const toolRun = await tools.find((tool) => tool.name === "workflow_run")?.execute("call-1", {
       workflow: "no-write-probe",
@@ -89,6 +228,41 @@ describe("harness direct workflow tools", () => {
       content: [{ type: "text", text: expect.stringContaining("\"status\":\"completed\"") }],
       details: expect.objectContaining({ status: "completed", result: { ok: true } }),
     }));
+  });
+
+  test("Pi native tools inherit model aliases from the harness environment", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-pi-tools-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "model-alias.js"), `
+export default async function ({ agent }) {
+  return agent("model probe", { model: "sonnet" });
+}
+`);
+    const previousAliases = process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES;
+    process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES = "sonnet=provider/balanced-worker";
+
+    try {
+      const extension = workflowKitExtension();
+      const run = await extension.tools.find((tool) => tool.name === "workflow_run")?.execute("call-model", {
+        workflow: "model-alias",
+        projectRoot,
+      });
+      const events = await extension.tools.find((tool) => tool.name === "workflow_events")?.execute("call-events", {
+        runId: (run as any).details.runId,
+        projectRoot,
+      });
+
+      expect((events as any).details).toContainEqual(expect.objectContaining({
+        type: "agent:start",
+        requestedModel: "sonnet",
+        model: "provider/balanced-worker",
+      }));
+    } finally {
+      if (previousAliases === undefined) delete process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES;
+      else process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES = previousAliases;
+    }
   });
 
   test("Antigravity plugin is skills-only and CLI based", () => {

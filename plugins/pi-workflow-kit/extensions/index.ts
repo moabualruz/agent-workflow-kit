@@ -1,6 +1,8 @@
 import {
+  createAliasModelPolicy,
   createWorkflowCommandService,
   dispatchWorkflowCommand,
+  parseModelAliases,
   workflowCommandCatalog,
   type WorkflowCatalogEntry,
   type WorkflowCommandInputKey,
@@ -98,6 +100,7 @@ function toolDefinition(
 function service(input?: Record<string, unknown>) {
   return createWorkflowCommandService({
     projectRoot: readText(input?.projectRoot) ?? process.cwd(),
+    modelPolicy: createAliasModelPolicy(parseModelAliases(process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES)),
   });
 }
 
