@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -26,12 +26,14 @@ export type HeadlessSmokeResult = {
   harness: HeadlessSmokeHarness;
   status: "passed" | "failed" | "skipped" | "dry-run";
   command: string[];
+  workflow?: ValidatedHeadlessWorkflow;
   error?: string;
 };
 
 type RunOptions = {
   run?: boolean;
   requireTools?: boolean;
+  harnesses?: HeadlessSmokeHarness[];
   timeoutMs?: number;
 };
 
@@ -39,6 +41,17 @@ type SmokeContext = {
   repoRoot: string;
   tempRoot: string;
   tempProject: string;
+};
+
+export type ValidatedHeadlessWorkflow = {
+  runId: string;
+  name: "no-write-probe";
+  status: "completed";
+  artifacts: {
+    root: string;
+    runJson: string;
+    eventsJsonl: string;
+  };
 };
 
 export const approvedModelAliasMaps = {
@@ -62,8 +75,8 @@ export const approvedPiFallbackModels = [
 ] as const;
 
 const prompt = [
-  "Run this exact no-write workflow command in the current project and return only the JSON status summary:",
-  "agent-workflow-kit workflow-run no-write-probe --json",
+  "Run this exact no-write workflow command in the requested project directory and return only the JSON status summary:",
+  'cd "{tempProject}" && agent-workflow-kit workflow-run no-write-probe --json',
 ].join("\n");
 
 export const headlessSmokeTargets: HeadlessSmokeTarget[] = [
@@ -82,13 +95,13 @@ export const headlessSmokeTargets: HeadlessSmokeTarget[] = [
   {
     harness: "gemini",
     command: "gemini",
-    args: ["--prompt", "{prompt}", "--skip-trust"],
+    args: ["--prompt", "{prompt}", "--skip-trust", "--yolo"],
     prompt,
   },
   {
     harness: "opencode",
     command: "opencode",
-    args: ["run", "--model", "{model}", "{prompt}"],
+    args: ["run", "--dir", "{tempProject}", "--dangerously-skip-permissions", "--model", "{model}", "{prompt}"],
     prompt,
     model: approvedModelAliasMaps.opencode.sonnet,
     modelEnv: "AGENT_WORKFLOW_KIT_OPENCODE_SMOKE_MODEL",
@@ -99,9 +112,9 @@ export const headlessSmokeTargets: HeadlessSmokeTarget[] = [
   {
     harness: "grok",
     command: "grok",
-    args: ["--model", "grok-build-0.1", "--prompt", "{prompt}"],
+    args: ["--model", "grok-build", "--cwd", "{tempProject}", "--always-approve", "-p", "{prompt}"],
     prompt,
-    model: "grok-build-0.1",
+    model: "grok-build",
   },
   {
     harness: "pi",
@@ -149,13 +162,19 @@ export async function runHeadlessSmoke(options: RunOptions = {}): Promise<Headle
 
   try {
     const results: HeadlessSmokeResult[] = [];
-    for (const target of headlessSmokeTargets) {
+    for (const target of selectedTargets(options.harnesses)) {
       results.push(await runTarget(target, context, options, binRoot));
     }
     return results;
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function selectedTargets(harnesses: HeadlessSmokeHarness[] | undefined): HeadlessSmokeTarget[] {
+  if (!harnesses?.length) return headlessSmokeTargets;
+  const requested = new Set(harnesses);
+  return headlessSmokeTargets.filter((target) => requested.has(target.harness));
 }
 
 function modelAliasEnv(aliases: Record<string, string>): string {
@@ -181,7 +200,7 @@ async function runTarget(
     env: {
       ...process.env,
       PATH: `${binRoot}:${process.env.PATH ?? ""}`,
-      ...(target.env ?? {}),
+      ...materializedEnv(target.env ?? {}, context),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -198,25 +217,169 @@ async function runTarget(
     if (exitCode !== 0) {
       return { harness: target.harness, status: "failed", command, error: `${target.command} exited ${exitCode}\n${output}` };
     }
-    if (!output.includes("no-write-probe")) {
-      return { harness: target.harness, status: "failed", command, error: "output did not mention no-write-probe" };
+    try {
+      const workflow = validateHeadlessSmokeOutput(output);
+      assertHeadlessWorkflowArtifactsExist(workflow);
+      return { harness: target.harness, status: "passed", command, workflow };
+    } catch (error) {
+      return {
+        harness: target.harness,
+        status: "failed",
+        command,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
-    return { harness: target.harness, status: "passed", command };
   } finally {
     clearTimeout(timeout);
   }
 }
 
+export function validateHeadlessSmokeOutput(output: string): ValidatedHeadlessWorkflow {
+  for (const value of extractJsonValues(output)) {
+    const workflow = findWorkflowPayload(value);
+    if (workflow) return workflow;
+  }
+
+  throw new Error(
+    `expected completed no-write-probe workflow JSON with artifact paths\nOutput excerpt:\n${outputExcerpt(output)}`,
+  );
+}
+
+export function assertHeadlessWorkflowArtifactsExist(workflow: ValidatedHeadlessWorkflow): void {
+  for (const path of [workflow.artifacts.root, workflow.artifacts.runJson, workflow.artifacts.eventsJsonl]) {
+    if (!existsSync(path)) throw new Error(`missing workflow artifact: ${path}`);
+  }
+}
+
+function outputExcerpt(output: string): string {
+  const trimmed = output.trim();
+  if (!trimmed) return "<empty>";
+  return trimmed.length > 2_000 ? `${trimmed.slice(0, 2_000)}...<truncated>` : trimmed;
+}
+
+function findWorkflowPayload(value: unknown): ValidatedHeadlessWorkflow | undefined {
+  if (isValidatedHeadlessWorkflow(value)) return value;
+
+  if (typeof value === "string") {
+    for (const nestedValue of extractJsonValues(value)) {
+      const workflow = findWorkflowPayload(nestedValue);
+      if (workflow) return workflow;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const workflow = findWorkflowPayload(entry);
+      if (workflow) return workflow;
+    }
+  }
+
+  if (value && typeof value === "object") {
+    for (const entry of Object.values(value)) {
+      const workflow = findWorkflowPayload(entry);
+      if (workflow) return workflow;
+    }
+  }
+
+  return undefined;
+}
+
+function isValidatedHeadlessWorkflow(value: unknown): value is ValidatedHeadlessWorkflow {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  const artifacts = record.artifacts as Record<string, unknown> | undefined;
+
+  return (
+    typeof record.runId === "string" &&
+    record.name === "no-write-probe" &&
+    record.status === "completed" &&
+    !!artifacts &&
+    typeof artifacts.root === "string" &&
+    typeof artifacts.runJson === "string" &&
+    typeof artifacts.eventsJsonl === "string"
+  );
+}
+
+function extractJsonValues(output: string): unknown[] {
+  const values: unknown[] = [];
+  for (let index = 0; index < output.length; index += 1) {
+    const char = output[index];
+    if (char !== "{" && char !== "[") continue;
+
+    const end = findJsonEnd(output, index);
+    if (end === -1) continue;
+
+    try {
+      values.push(JSON.parse(output.slice(index, end + 1)));
+      index = end;
+    } catch {
+      continue;
+    }
+  }
+  return values;
+}
+
+function findJsonEnd(output: string, start: number): number {
+  const open = output[start];
+  const close = open === "{" ? "}" : "]";
+  const stack = [close];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start + 1; index < output.length; index += 1) {
+    const char = output[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === "{" || char === "[") {
+      stack.push(char === "{" ? "}" : "]");
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      if (char !== stack.pop()) return -1;
+      if (stack.length === 0) return index;
+    }
+  }
+
+  return -1;
+}
+
+function materializedEnv(env: Record<string, string>, context: SmokeContext): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).map(([key, value]) => [key, materialize(value, context)]));
+}
+
 function materializedCommand(target: HeadlessSmokeTarget, context: SmokeContext): string[] {
   const model = target.modelEnv ? (process.env[target.modelEnv] ?? target.model) : target.model;
+  const prompt = materialize(target.prompt, context);
   return [
     target.command,
-    ...target.args.map((arg) => arg
-      .replaceAll("{prompt}", target.prompt)
-      .replaceAll("{model}", model ?? "")
-      .replaceAll("{repoRoot}", context.repoRoot)
-      .replaceAll("{tempRoot}", context.tempRoot)),
+    ...target.args.map((arg) => materialize(arg, context)
+      .replaceAll("{prompt}", prompt)
+      .replaceAll("{model}", model ?? "")),
   ];
+}
+
+function materialize(value: string, context: SmokeContext): string {
+  return value
+    .replaceAll("{repoRoot}", context.repoRoot)
+    .replaceAll("{tempRoot}", context.tempRoot)
+    .replaceAll("{tempProject}", context.tempProject);
 }
 
 async function executableExists(command: string): Promise<boolean> {
@@ -230,7 +393,30 @@ async function executableExists(command: string): Promise<boolean> {
 if (import.meta.main) {
   const run = process.argv.includes("--run");
   const requireTools = process.argv.includes("--require-tools");
-  const results = await runHeadlessSmoke({ run, requireTools });
+  const harnesses = parseHarnesses(process.argv.slice(2));
+  const options: RunOptions = { run, requireTools };
+  if (harnesses) options.harnesses = harnesses;
+  const results = await runHeadlessSmoke(options);
   console.log(JSON.stringify(results, null, 2));
   if (results.some((result) => result.status === "failed")) process.exitCode = 1;
+}
+
+function parseHarnesses(argv: string[]): HeadlessSmokeHarness[] | undefined {
+  const harnesses: HeadlessSmokeHarness[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== "--harness") continue;
+    const value = argv[index + 1];
+    if (!value) throw new Error("--harness requires a value");
+    harnesses.push(...value.split(",").map(parseHarness));
+    index += 1;
+  }
+  return harnesses.length ? harnesses : undefined;
+}
+
+function parseHarness(value: string): HeadlessSmokeHarness {
+  const harness = value.trim();
+  if (headlessSmokeTargets.some((target) => target.harness === harness)) {
+    return harness as HeadlessSmokeHarness;
+  }
+  throw new Error(`Unsupported harness: ${value}`);
 }
