@@ -53,4 +53,8 @@ Development gates:
 bun run typecheck
 bun test
 bun run install-smoke
+bun run headless-smoke
 ```
+
+`bun run headless-smoke` performs a dry-run command/materialization check. `bun run headless-smoke:live`
+executes the harness CLIs and may consume model credits.

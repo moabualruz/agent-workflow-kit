@@ -9,7 +9,9 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "install-smoke": "bun scripts/install-smoke.ts --require-tools"
+    "install-smoke": "bun scripts/install-smoke.ts --require-tools",
+    "headless-smoke": "bun scripts/headless-smoke.ts --require-tools",
+    "headless-smoke:live": "bun scripts/headless-smoke.ts --require-tools --run"
   },
   "bin": {
     "agent-workflow-kit": "packages/cli/src/cli.ts"
