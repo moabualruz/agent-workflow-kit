@@ -6,5 +6,6 @@ export * from "./model-policy";
 export * from "./permissions";
 export * from "./runtime";
 export * from "./saved-workflows";
+export * from "./schema-default-agent";
 export * from "./store";
 export * from "./workflow-authoring";

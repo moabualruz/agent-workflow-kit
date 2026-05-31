@@ -4,6 +4,7 @@ import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 import { createWorkflowRuntime } from "./runtime";
 import { resolveWorkflow, resolveWorkflowInvocation } from "./saved-workflows";
+import { schemaDefaultAgent } from "./schema-default-agent";
 import { createFileStore } from "./store";
 import { saveGeneratedWorkflow } from "./workflow-authoring";
 
@@ -20,7 +21,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
   const store = createFileStore({ projectRoot: options.projectRoot });
   const runtime = createWorkflowRuntime({
     store,
-    agent: options.agent ?? (async () => ({ ok: true })),
+    agent: options.agent ?? schemaDefaultAgent,
     modelPolicy: options.modelPolicy,
     permissionPolicy: options.permissionPolicy,
     resolveWorkflow: (request, args) => resolveWorkflowInvocation(options.projectRoot, request, args),

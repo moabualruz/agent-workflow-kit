@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkflowCommandService, denyDynamicWorkflowPolicy } from "../src/index";
@@ -89,5 +89,45 @@ describe("workflow command service", () => {
       status: "failed",
       error: "Dynamic workflow execution denied by permission policy",
     }));
+  });
+
+  test("default agent returns schema-shaped values for structural workflow runs", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-command-service-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "schema-default.js"), `
+export default async function ({ agent }) {
+  return agent("schema default", {
+    schema: {
+      type: "object",
+      required: ["items", "decision", "count", "ok"],
+      properties: {
+        items: { type: "array", items: { type: "string" } },
+        decision: { type: "string", enum: ["skip", "run"] },
+        count: { type: "integer" },
+        ok: { type: "boolean" },
+        nested: {
+          type: "object",
+          properties: {
+            note: { type: "string" }
+          }
+        }
+      }
+    }
+  });
+}
+`);
+    const service = createWorkflowCommandService({ projectRoot });
+
+    const run = await service.runSavedWorkflow("schema-default");
+
+    expect(run.result).toEqual({
+      items: [],
+      decision: "skip",
+      count: 0,
+      ok: false,
+      nested: { note: "" },
+    });
   });
 });
