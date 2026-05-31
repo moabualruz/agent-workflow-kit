@@ -52,4 +52,5 @@ Development gates:
 ```sh
 bun run typecheck
 bun test
+bun run install-smoke
 ```

@@ -8,7 +8,8 @@
   "packageManager": "bun@1.2.15",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "install-smoke": "bun scripts/install-smoke.ts --require-tools"
   },
   "bin": {
     "agent-workflow-kit": "packages/cli/src/cli.ts"
