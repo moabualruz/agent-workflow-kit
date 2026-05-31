@@ -3,7 +3,7 @@ import { requireText } from "./errors";
 import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 import { createWorkflowRuntime } from "./runtime";
-import { resolveWorkflow } from "./saved-workflows";
+import { resolveWorkflow, resolveWorkflowInvocation } from "./saved-workflows";
 import { createFileStore } from "./store";
 import { saveGeneratedWorkflow } from "./workflow-authoring";
 
@@ -23,6 +23,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     agent: options.agent ?? (async () => ({ ok: true })),
     modelPolicy: options.modelPolicy,
     permissionPolicy: options.permissionPolicy,
+    resolveWorkflow: (request, args) => resolveWorkflowInvocation(options.projectRoot, request, args),
   });
 
   return {

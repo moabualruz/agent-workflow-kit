@@ -1,4 +1,4 @@
-import type { RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowStore } from "./domain";
+import type { RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowInvocation, WorkflowScript, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
 import type { ModelPolicy, ModelResolution } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
@@ -8,6 +8,13 @@ export type WorkflowRuntimeOptions = {
   agent: (prompt: string, options?: { model?: string; schema?: unknown }) => Promise<unknown>;
   modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
+  resolveWorkflow?: (request: WorkflowInvocation, args?: WorkflowArgs) => Promise<ResolvedWorkflowInvocation>;
+};
+
+export type ResolvedWorkflowInvocation = {
+  name: string;
+  script: WorkflowScript;
+  args?: WorkflowArgs | undefined;
 };
 
 export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
@@ -87,22 +94,40 @@ function createContext(
       return results;
     },
 
-    async workflow(request) {
+    async workflow(request, args) {
+      const child = await resolveChildWorkflow(request, args, options.resolveWorkflow);
       options.store.append({
         runId,
         type: "phase",
         index: ++counters.phase,
-        title: request.name,
+        title: child.name,
         kind: "child",
       });
 
-      return request.script(createContext(runId, options, counters, request.args ?? {}));
+      return child.script(createContext(runId, options, counters, child.args ?? {}));
     },
 
     log(message: string): void {
       options.store.append({ runId, type: "log", message });
     },
   };
+}
+
+async function resolveChildWorkflow(
+  request: WorkflowInvocation,
+  args: WorkflowArgs | undefined,
+  resolver: WorkflowRuntimeOptions["resolveWorkflow"],
+): Promise<ResolvedWorkflowInvocation> {
+  if (request.script) {
+    return {
+      name: request.name ?? "workflow",
+      script: request.script,
+      args: args ?? request.args,
+    };
+  }
+
+  if (!resolver) throw new Error("Child workflow resolver is not configured");
+  return resolver(request, args);
 }
 
 function resolveModel(modelPolicy: ModelPolicy | undefined, model: string | undefined): ModelResolution | undefined {

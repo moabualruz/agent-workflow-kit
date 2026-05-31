@@ -36,9 +36,10 @@ Core module boundaries:
 Current parity contract:
 
 - JavaScript workflow scripts with `args`, `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
+- Claude-style workflow script bodies with `export const meta`, top-level `phase()` / `agent()` calls, top-level `return`, and `workflow({ scriptPath }, args)` child calls
 - per-agent model override forwarding and event persistence
 - Claude-style model aliases through CLI `--model-alias alias=provider/model` or `AGENT_WORKFLOW_KIT_MODEL_ALIASES=alias=provider/model,...`, preserving `requestedModel` and resolved `model` in events
-- saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, direct `.js` script paths, with `.claude/workflows/<name>.js` compatibility fallback
+- saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, `scripts/workflows/<name>.workflow.js`, direct `.js` script paths, with `.claude/workflows/<name>.js` compatibility fallback
 - `workflow "<task>"` writes `.agent-workflow-kit/workflows/<generated-name>.js` and returns that workflow name/path for later `workflow-run`
 - structured workflow args through `workflow-run <workflow> --args-json '{"key":"value"}'`, exposed to scripts as `context.args`
 - append-like progress events through `workflow-events <run-id>`

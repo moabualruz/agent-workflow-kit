@@ -118,4 +118,76 @@ export default async function ({ phase, log }) {
       rmSync(projectRoot, { recursive: true, force: true });
     }
   });
+
+  test("command service runs Claude-style workflow script bodies with scriptPath children", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-claude-style-workflows-"));
+    try {
+      const childPath = join(projectRoot, "child.workflow.js");
+      const parentPath = join(projectRoot, "parent.workflow.js");
+
+      writeFileSync(childPath, `
+export const meta = { name: "child", phases: [{ title: "Child" }] };
+phase("Child");
+return { childArg: args.childArg };
+`);
+      writeFileSync(parentPath, `
+export const meta = { name: "parent", phases: [{ title: "Parent" }] };
+phase("Parent");
+const child = await workflow({ scriptPath: ${JSON.stringify(childPath)} }, { childArg: args.parentArg });
+return { source: "claude-style", child };
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow(parentPath, { parentArg: "from-parent" });
+      const events = service.eventsFor(run.runId);
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "parent.workflow",
+        status: "completed",
+        result: {
+          source: "claude-style",
+          child: { childArg: "from-parent" },
+        },
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "phase",
+        title: "Parent",
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "phase",
+        title: "child.workflow",
+        kind: "child",
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "phase",
+        title: "Child",
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("command service resolves named project workflow executors from scripts/workflows", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-project-workflows-"));
+    try {
+      const workflowsRoot = join(projectRoot, "scripts", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "project-library.workflow.js"), `
+export const meta = { name: "project-library", phases: [{ title: "Project Library" }] };
+phase("Project Library");
+return { args };
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow("project-library", { project: "ok" });
+
+      expect(run).toEqual(expect.objectContaining({
+        name: "project-library",
+        status: "completed",
+        result: { args: { project: "ok" } },
+      }));
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
 });

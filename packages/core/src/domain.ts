@@ -49,14 +49,15 @@ export type WorkflowContext = {
     items: TInput[],
     ...stages: Array<(value: any, item: TInput, index: number) => Promise<any> | any>
   ) => Promise<any[]>;
-  workflow: (request: WorkflowInvocation) => Promise<unknown>;
+  workflow: (request: WorkflowInvocation, args?: WorkflowArgs) => Promise<unknown>;
   log: (message: string) => void;
 };
 
 export type WorkflowInvocation = {
-  name: string;
-  script: WorkflowScript;
-  args?: WorkflowArgs;
+  name?: string;
+  script?: WorkflowScript;
+  scriptPath?: string;
+  args?: WorkflowArgs | undefined;
 };
 
 export type RunRequest = {

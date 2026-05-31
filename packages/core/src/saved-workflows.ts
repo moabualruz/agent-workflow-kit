@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { WorkflowScript } from "./domain";
+import type { WorkflowArgs, WorkflowInvocation, WorkflowScript } from "./domain";
+import type { ResolvedWorkflowInvocation } from "./runtime";
 
 export type WorkflowScope = "project" | "personal";
 
@@ -65,6 +66,40 @@ export async function resolveWorkflow(projectRoot: string, workflowRef: string):
   throw new Error(`Unknown workflow: ${workflowRef}`);
 }
 
+export async function resolveWorkflowInvocation(
+  projectRoot: string,
+  request: WorkflowInvocation,
+  args?: WorkflowArgs,
+): Promise<ResolvedWorkflowInvocation> {
+  if (request.script) {
+    return {
+      name: request.name ?? "workflow",
+      script: request.script,
+      args: args ?? request.args,
+    };
+  }
+
+  if (request.scriptPath) {
+    const directPath = directWorkflowPath(projectRoot, request.scriptPath);
+    if (!directPath) throw new Error(`Unknown workflow scriptPath: ${request.scriptPath}`);
+    return {
+      name: workflowNameFromPath(directPath),
+      script: await loadWorkflowScript(directPath),
+      args: args ?? request.args,
+    };
+  }
+
+  if (request.name) {
+    const workflow = await resolveWorkflow(projectRoot, request.name);
+    return {
+      ...workflow,
+      args: args ?? request.args,
+    };
+  }
+
+  throw new Error("Child workflow invocation requires name, script, or scriptPath");
+}
+
 const builtInWorkflows = new Map<string, WorkflowScript>([
   [
     "no-write-probe",
@@ -80,6 +115,7 @@ function findWorkflowFile(projectRoot: string, workflowName: string): string | u
   const candidates = [
     join(projectRoot, ".agent-workflow-kit", "workflows", `${workflowName}.js`),
     join(projectRoot, ".claude", "workflows", `${workflowName}.js`),
+    join(projectRoot, "scripts", "workflows", `${workflowName}.workflow.js`),
   ];
   return candidates.find((candidate) => existsSync(candidate));
 }
@@ -99,10 +135,34 @@ function workflowNameFromPath(workflowPath: string): string {
 }
 
 async function loadWorkflowScript(workflowPath: string): Promise<WorkflowScript> {
+  const source = readFileSync(workflowPath, "utf8");
+  if (isClaudeStyleWorkflowSource(source)) return compileClaudeStyleWorkflowScript(source, workflowPath);
+
   const module = await import(pathToFileURL(workflowPath).href);
   const script = module.default ?? module.workflow;
   if (typeof script !== "function") throw new Error(`Saved workflow must export a function: ${workflowPath}`);
   return script as WorkflowScript;
+}
+
+function isClaudeStyleWorkflowSource(source: string): boolean {
+  return /\bexport\s+const\s+meta\s*=/.test(source) && !/\bexport\s+default\b/.test(source) && !/\bexport\s+(?:async\s+)?function\s+workflow\b/.test(source);
+}
+
+function compileClaudeStyleWorkflowScript(source: string, workflowPath: string): WorkflowScript {
+  const body = source.replace(/\bexport\s+const\s+meta\s*=/, "const meta =");
+  const sourceUrl = workflowPath.replaceAll("\\", "/");
+  // eslint-disable-next-line no-new-func
+  const run = Function(
+    "context",
+    `"use strict";
+const { args, agent, phase, parallel, pipeline, workflow, log } = context;
+return (async () => {
+${body}
+})();
+//# sourceURL=${sourceUrl}`,
+  ) as (context: unknown) => Promise<unknown>;
+
+  return (context) => run(context);
 }
 
 function assertWorkflowName(workflowName: string): void {
