@@ -46,7 +46,15 @@ describe("headless smoke contract", () => {
     expect(serializedMaps).not.toContain("claude-opus");
     expect(serializedMaps).not.toContain("claude-sonnet");
     expect(serializedMaps).not.toContain("claude-haiku");
-    expect(approvedPiFallbackModels).toContain("opencode/grok-build-0.1");
+    expect(approvedPiFallbackModels).toEqual([
+      "opencode-go/deepseek-v4-pro",
+      "opencode-go/qwen3.6-plus",
+      "opencode-go/deepseek-v4-flash",
+      "opencode/grok-build-0.1",
+      "xai-auth/grok-4.3",
+      "xai-auth/grok-4.20-0309-reasoning",
+      "xai-auth/grok-4.20-0309-non-reasoning",
+    ]);
   });
 
   test("exposes dry-run and live headless smoke package scripts", () => {

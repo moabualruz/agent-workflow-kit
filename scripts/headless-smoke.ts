@@ -72,6 +72,9 @@ export const approvedPiFallbackModels = [
   "opencode-go/qwen3.6-plus",
   "opencode-go/deepseek-v4-flash",
   "opencode/grok-build-0.1",
+  "xai-auth/grok-4.3",
+  "xai-auth/grok-4.20-0309-reasoning",
+  "xai-auth/grok-4.20-0309-non-reasoning",
 ] as const;
 
 const prompt = [

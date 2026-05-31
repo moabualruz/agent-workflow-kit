@@ -47,6 +47,12 @@ Current parity contract:
 - failed-run state stored independently from process exit status
 - permission policy hooks and CLI `--permission-mode dontAsk|bypassPermissions` for dynamic workflow execution
 
+Model defaults used by smoke tests:
+
+- OpenCode: `opus=opencode-go/deepseek-v4-pro`, `sonnet=opencode-go/qwen3.6-plus`, `haiku=opencode/deepseek-v4-flash-free`
+- Pi: `opus=openai-codex/gpt-5.5`, `sonnet=openai-codex/gpt-5.3-codex`, `haiku=opencode/deepseek-v4-flash-free`
+- Pi fallback-only candidates when needed: `opencode-go/deepseek-v4-pro`, `opencode-go/qwen3.6-plus`, `opencode-go/deepseek-v4-flash`, `opencode/grok-build-0.1`, `xai-auth/grok-4.3`, `xai-auth/grok-4.20-0309-reasoning`, `xai-auth/grok-4.20-0309-non-reasoning`
+
 Development gates:
 
 ```sh
