@@ -3,8 +3,38 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "Harness-native workflow tools for agent CLIs.",
+  "description": "Claude Workflows-style orchestration for Codex, Gemini, OpenCode, Grok, Pi, and Antigravity.",
   "license": "MIT",
+  "homepage": "https://github.com/moabualruz/agent-workflow-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moabualruz/agent-workflow-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/moabualruz/agent-workflow-kit/issues"
+  },
+  "keywords": [
+    "agent-workflows",
+    "agentic-workflows",
+    "ai-agents",
+    "cli",
+    "orchestration",
+    "workflow-engine",
+    "claude-workflows",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "opencode",
+    "grok",
+    "pi",
+    "antigravity",
+    "developer-tools",
+    "typescript",
+    "plugins",
+    "multi-agent",
+    "coding-agents",
+    "automation"
+  ],
   "packageManager": "bun@1.2.15",
   "scripts": {
     "test": "bun test",

@@ -1,6 +1,7 @@
 {
   "name": "@agent-workflow-kit/cli",
   "version": "0.1.0",
+  "description": "CLI for running Agent Workflow Kit workflows and harness command adapters.",
   "type": "module",
   "bin": {
     "agent-workflow-kit": "./src/cli.ts"

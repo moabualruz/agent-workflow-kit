@@ -1,16 +1,16 @@
 {
   "name": "codex-workflow-kit",
   "version": "0.1.0",
-  "description": "Workflow orchestration tools for Codex.",
+  "description": "Claude Workflows-style orchestration skill for Codex.",
   "author": {
-    "name": "Local developer"
+    "name": "moabualruz"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Workflow Kit",
-    "shortDescription": "Use Codex Workflow Kit in Codex.",
-    "longDescription": "Codex Workflow Kit adds workflow orchestration skills that call the shared workflow CLI.",
-    "developerName": "Local developer",
+    "shortDescription": "Run Agent Workflow Kit workflows from Codex.",
+    "longDescription": "Codex Workflow Kit adds Claude Workflows-style orchestration skills that call the shared workflow CLI.",
+    "developerName": "moabualruz",
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": "Use Codex Workflow Kit for workflow orchestration."

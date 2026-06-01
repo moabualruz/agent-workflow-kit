@@ -1,6 +1,7 @@
 {
   "name": "pi-workflow-kit",
   "version": "0.1.0",
+  "description": "Pi commands, skills, and tools for Agent Workflow Kit orchestration.",
   "type": "module",
   "private": true,
   "pi": {

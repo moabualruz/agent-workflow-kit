@@ -1,5 +1,5 @@
 {
   "name": "grok-workflow-kit",
   "version": "0.1.0",
-  "description": "Workflow orchestration tools for Grok Build."
+  "description": "Claude Workflows-style orchestration commands for Grok Build."
 }

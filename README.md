@@ -1,82 +1,257 @@
 # Agent Workflow Kit
 
-Harness-native workflow tools for agent CLIs.
+[![Release](https://img.shields.io/github/v/release/moabualruz/agent-workflow-kit?sort=semver)](https://github.com/moabualruz/agent-workflow-kit/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](package.json)
 
-Goal: make supported non-Claude agent harnesses expose Claude Workflows-like orchestration through native plugins/extensions using commands, skills, CLI tool calls, script calls, and hooks where useful.
+Claude Workflows-style orchestration for agent CLIs that do not have native workflow support.
 
-Claude Code already has native Workflows. This repo uses Claude only as the reference behavior documented in `reference/claude-workflows`; it does not ship a Claude replacement plugin.
+Agent Workflow Kit gives Codex, Gemini CLI, OpenCode, Grok Build, Pi, and Antigravity a shared workflow command set while leaving Claude Code on its native Workflows implementation. It is a standalone open-source toolkit: one TypeScript core, one CLI, and thin harness-native plugin, extension, skill, or command packs.
 
-Supported implementation packs:
+## Why Use It
 
-- Codex: `plugins/codex-workflow-kit` with skills that call the shared CLI
-- Gemini CLI: `plugins/gemini-workflow-kit`
-- OpenCode: `plugins/opencode-workflow-kit`
-- Grok Build: `plugins/grok-workflow-kit`
-- Pi: `plugins/pi-workflow-kit` with registered commands/tools
-- Antigravity CLI: `plugins/antigravity-workflow-kit` with one skill per shared command
+- Write one persistent JavaScript workflow and run it from multiple agent harnesses.
+- Keep workflow state on disk with `run.json` and `events.jsonl` artifacts.
+- Use familiar commands: `workflow`, `workflow-run`, `workflow-status`, `workflow-events`, `workflow-resume`, `workflow-stop`, `workflows`, and `deep-research`.
+- Preserve Claude-style workflow behavior where it matters: phases, agents, parallel work, pipelines, child workflows, structured args, model aliases, and permission modes.
+- Avoid protocol-server coupling. The project ships skills, commands, script calls, native tool handlers, and a CLI only.
 
-Install from this standalone checkout:
+## Supported Harnesses
+
+| Harness | Pack | Surface |
+|---|---|---|
+| Claude Code | Native reference only | Uses Claude Code Workflows directly; no replacement plugin is shipped |
+| Codex | `plugins/codex-workflow-kit` | Codex plugin skill that calls the shared CLI |
+| Gemini CLI | `plugins/gemini-workflow-kit` | Gemini extension commands |
+| OpenCode | `plugins/opencode-workflow-kit` | OpenCode native plugin and command files |
+| Grok Build | `plugins/grok-workflow-kit` | Command files that call the shared CLI |
+| Pi | `plugins/pi-workflow-kit` | Pi commands, skills, prompt templates, and registered tools |
+| Antigravity CLI | `plugins/antigravity-workflow-kit` | One skill per shared command |
+
+## Quick Start
+
+Agent Workflow Kit currently installs from a cloned checkout because one repository contains several harness-specific packs.
 
 ```sh
+git clone --branch v0.1.0 https://github.com/moabualruz/agent-workflow-kit.git
+cd agent-workflow-kit
+bun install
 bun link --global
+```
+
+Install the pack for the harnesses you use:
+
+```sh
 codex plugin marketplace add .
 codex plugin add codex-workflow-kit@agent-workflow-kit
+
 gemini extensions install plugins/gemini-workflow-kit --consent --skip-settings
-opencode plugin ./plugins/opencode-workflow-kit --global --force
+
+opencode plugin "$PWD/plugins/opencode-workflow-kit" --global --force
+
 grok plugin install "$PWD/plugins/grok-workflow-kit" --trust
+
 pi install "$PWD/plugins/pi-workflow-kit"
+
 agy plugin install plugins/antigravity-workflow-kit
 ```
 
-Shared runtime package:
+Claude Code needs no install from this repo. It already owns native Workflows, and this project treats Claude behavior as the compatibility target.
 
-- `packages/core`
-- `createWorkflowCommandService()` for CLI, command, skill, script-call, and extension adapters
-- `workflowCommandCatalog` as the single public command/tool registry
-- `dispatchWorkflowCommand()` as the shared adapter boundary for CLI and native tools
+## First Workflow
 
-Core module boundaries:
-
-- `domain.ts`: workflow domain types and runtime interfaces
-- `store.ts`: in-memory and file-backed run/event persistence
-- `runtime.ts`: workflow execution semantics
-- `execution-limits.ts`: per-run agent count and concurrency gates
-- `workflow-authoring.ts`: generated workflow names and project workflow file writes
-- `saved-workflows.ts`: saved workflow lookup and script loading
-- `command-service.ts`: application service for workflow commands
-- `command-catalog.ts`: public command names, tool names, descriptions, argument mapping, native tool input schema, and dispatch
-- `model-policy.ts`: Claude-style model alias resolution before harness adapter calls
-
-Current parity contract:
-
-- JavaScript workflow scripts with `args`, `agent`, `phase`, `parallel`, `pipeline`, `workflow`, `log`, and return values
-- Claude-style workflow script bodies with `export const meta`, top-level `phase()` / `agent()` calls, top-level `return` or save-dialog final expression values, and `workflow({ scriptPath }, args)` child calls
-- per-agent model override forwarding and event persistence
-- Claude-style model aliases through CLI `--model-alias alias=provider/model` or `AGENT_WORKFLOW_KIT_MODEL_ALIASES=alias=provider/model,...`, preserving `requestedModel` and resolved `model` in events
-- Claude-style per-run agent limits: 16 concurrent agents and 1000 total agent calls by default
-- saved workflow names from `.agent-workflow-kit/workflows/<name>.js`, project `.claude/workflows/<name>.js`, `scripts/workflows/<name>.workflow.js`, direct `.js` script paths, with personal `~/.claude/workflows/<name>.js` compatibility fallback; project files win over personal files
-- `workflow "<task>"` writes `.agent-workflow-kit/workflows/<generated-name>.js` and returns that workflow name/path for later `workflow-run`
-- structured workflow args through `workflow-run <workflow> --args-json '{"key":"value"}'`, exposed to scripts as `context.args`
-- append-like progress events through `workflow-events <run-id>`
-- artifact paths for each persisted run (`run.json` and `events.jsonl`)
-- child workflow phase records
-- failed-run state stored independently from process exit status
-- permission policy hooks and CLI `--permission-mode dontAsk|bypassPermissions` for dynamic workflow execution
-
-Model defaults used by smoke tests:
-
-- OpenCode: `opus=opencode-go/deepseek-v4-pro`, `sonnet=opencode-go/qwen3.6-plus`, `haiku=opencode/deepseek-v4-flash-free`
-- Pi: `opus=openai-codex/gpt-5.5`, `sonnet=openai-codex/gpt-5.3-codex`, `haiku=opencode/deepseek-v4-flash-free`
-- Pi fallback-only candidates when needed: `opencode-go/deepseek-v4-pro`, `opencode-go/qwen3.6-plus`, `opencode-go/deepseek-v4-flash`, `opencode/grok-build-0.1`, `xai-auth/grok-4.3`, `xai-auth/grok-4.20-0309-reasoning`, `xai-auth/grok-4.20-0309-non-reasoning`
-
-Development gates:
+Create a persistent workflow from a task prompt:
 
 ```sh
+agent-workflow-kit workflow "review the pull request and summarize risks" --json
+```
+
+Run it later by name:
+
+```sh
+agent-workflow-kit workflow-run review-the-pull-request-and-summarize-risks --json
+```
+
+Run a hand-written workflow file with structured input:
+
+```sh
+agent-workflow-kit workflow-run scripts/workflows/release-check.workflow.js \
+  --args-json '{"target":"v0.2.0","mode":"review-only"}' \
+  --json
+```
+
+Inspect the run:
+
+```sh
+agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-events <run-id>
+```
+
+## Workflow File Shape
+
+Workflows can be normal JavaScript modules:
+
+```js
+export default async function reviewAndFix({ args, agent, phase, parallel, log }) {
+  phase("Review");
+  const findings = await agent(`Review ${args.target} for defects`, { model: "sonnet" });
+
+  phase("Fix Plan");
+  const [tests, docs] = await parallel([
+    () => agent("Find the smallest test plan", { model: "haiku" }),
+    () => agent("Find documentation updates", { model: "haiku" }),
+  ]);
+
+  log("Review complete");
+  return { findings, tests, docs };
+}
+```
+
+Claude-style saved workflow bodies are also supported:
+
+```js
+export const meta = {
+  name: "release-check",
+  description: "Review release readiness",
+  phases: [{ title: "Check" }]
+};
+
+phase("Check");
+const result = await agent(`Check release ${args.target}`, { model: "sonnet" });
+return { result };
+```
+
+## Workflow Discovery
+
+`workflow-run <name>` resolves workflow files in this order:
+
+1. `.agent-workflow-kit/workflows/<name>.js`
+2. `.claude/workflows/<name>.js`
+3. `scripts/workflows/<name>.workflow.js`
+4. direct `.js` script paths
+5. personal `~/.claude/workflows/<name>.js` fallback
+
+Project files win over personal files so repositories can keep deterministic workflow behavior.
+
+## Command Reference
+
+| Command | Purpose |
+|---|---|
+| `workflow "<task>"` | Generate and save a persistent workflow under `.agent-workflow-kit/workflows/` |
+| `workflow-run <name-or-path>` | Execute a saved workflow name or direct JavaScript file path |
+| `workflow-status <run-id>` | Read the persisted run status and result |
+| `workflow-events <run-id>` | Stream the append-like workflow event log |
+| `workflow-resume <run-id>` | Resume a resumable workflow run |
+| `workflow-stop <run-id>` | Request cancellation for a workflow run |
+| `workflows` | List saved project workflows |
+| `deep-research "<topic>"` | Generate a research workflow for a topic |
+
+Common flags:
+
+| Flag | Purpose |
+|---|---|
+| `--project-root <path>` | Use another project as the workflow root |
+| `--args-json '<json>'` | Pass structured args into `context.args` and Claude-style `args` |
+| `--permission-mode dontAsk` | Deny dynamic workflow execution unless explicitly allowed |
+| `--permission-mode bypassPermissions` | Allow dynamic workflow execution |
+| `--model-alias alias=provider/model` | Resolve Claude-style aliases such as `opus`, `sonnet`, or `haiku` |
+| `--json` | Print machine-readable output |
+
+## Model Alias Policy
+
+The core keeps `requestedModel` and resolved `model` in workflow events. Aliases can be provided per command:
+
+```sh
+agent-workflow-kit workflow-run release-check \
+  --model-alias sonnet=opencode-go/qwen3.6-plus \
+  --model-alias haiku=opencode/deepseek-v4-flash-free \
+  --json
+```
+
+Or through the environment:
+
+```sh
+export AGENT_WORKFLOW_KIT_MODEL_ALIASES="sonnet=opencode-go/qwen3.6-plus,haiku=opencode/deepseek-v4-flash-free"
+```
+
+Smoke-test defaults:
+
+| Harness | `opus` | `sonnet` | `haiku` |
+|---|---|---|---|
+| OpenCode | `opencode-go/deepseek-v4-pro` | `opencode-go/qwen3.6-plus` | `opencode/deepseek-v4-flash-free` |
+| Pi | `openai-codex/gpt-5.5` | `openai-codex/gpt-5.3-codex` | `opencode/deepseek-v4-flash-free` |
+
+Pi may use OpenCode or Grok models as fallback candidates when needed. OpenCode defaults stay limited to OpenCode Zen/OpenCode Go, subscription-allowed, and free models.
+
+## Persistence And Artifacts
+
+Each run is stored under:
+
+```text
+.agent-workflow-kit/runs/<run-id>/
+├── run.json
+└── events.jsonl
+```
+
+`run.json` holds final status, result, error, and artifact paths. `events.jsonl` records phases, agent starts, agent completions, permission decisions, child workflow records, failures, and cancellation signals.
+
+## Security Model
+
+- No external protocol servers are shipped by this repository.
+- Dynamic workflow execution is mediated by the permission policy.
+- `dontAsk` fails closed for dynamic execution.
+- `bypassPermissions` is explicit and visible in command history.
+- Workflow state is local to the project root unless `--project-root` points elsewhere.
+- Generated runtime data lives under `.agent-workflow-kit/`, which is ignored by git.
+
+## Architecture
+
+The shared runtime lives in `packages/core`:
+
+| Module | Responsibility |
+|---|---|
+| `domain.ts` | Workflow domain types and runtime interfaces |
+| `store.ts` | In-memory and file-backed run/event persistence |
+| `runtime.ts` | Workflow execution semantics |
+| `execution-limits.ts` | Per-run agent count and concurrency gates |
+| `workflow-authoring.ts` | Generated workflow names and project workflow file writes |
+| `saved-workflows.ts` | Saved workflow lookup and script loading |
+| `command-service.ts` | Application service for workflow commands |
+| `command-catalog.ts` | Public command/tool registry, argument mapping, and native input schemas |
+| `model-policy.ts` | Model alias resolution before harness adapter calls |
+
+Adapters stay thin: CLI, skills, commands, and native plugin handlers all dispatch through the shared command catalog.
+
+## Development
+
+```sh
+bun install
 bun run typecheck
 bun test
 bun run install-smoke
 bun run headless-smoke
 ```
 
-`bun run headless-smoke` performs a dry-run command/materialization check. `bun run headless-smoke:live`
-executes the harness CLIs and may consume model credits.
+`bun run headless-smoke` performs a dry-run command and materialization check. `bun run headless-smoke:live` executes harness CLIs and may consume model credits.
+
+## Release Status
+
+Current release: `v0.1.0`.
+
+The repository is usable as a local install today. APIs and harness pack shapes may change before `v1.0.0`, but the core contract is intentionally small: persistent workflows, shared commands, file-backed events, explicit permissions, and harness-native adapters.
+
+## Contributing
+
+Contributions are welcome for new harness packs, better install automation, parity probes, and documentation. Keep new behavior in `packages/core` when multiple harnesses need it; keep harness directories as thin adapters. Do not add external protocol servers to this repo.
+
+Before opening a PR, run:
+
+```sh
+bun run typecheck
+bun test
+bun run install-smoke
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

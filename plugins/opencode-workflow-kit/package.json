@@ -1,6 +1,7 @@
 {
   "name": "opencode-workflow-kit",
   "version": "0.1.0",
+  "description": "OpenCode plugin for Agent Workflow Kit orchestration commands.",
   "type": "module",
   "private": true,
   "exports": {
