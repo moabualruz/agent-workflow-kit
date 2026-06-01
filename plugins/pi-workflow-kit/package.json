@@ -6,7 +6,6 @@
   "private": true,
   "pi": {
     "extensions": ["extensions"],
-    "skills": ["skills"],
-    "promptTemplates": ["prompt-templates"]
+    "skills": ["skills"]
   }
 }

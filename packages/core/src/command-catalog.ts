@@ -2,12 +2,12 @@ import type { WorkflowCommandService } from "./command-service";
 import type { WorkflowArgs } from "./domain";
 import { requireInputText } from "./errors";
 
-export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question";
+export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question" | "action";
 export type WorkflowCommandArgumentMode = "first" | "join";
-export type WorkflowCommandToolInputKind = "string" | "object";
+export type WorkflowCommandToolInputKind = "string" | "object" | "boolean";
 
 export type WorkflowCommandToolInput = {
-  name: "projectRoot" | WorkflowCommandInputKey | "args";
+  name: "projectRoot" | WorkflowCommandInputKey | "args" | "detach";
   kind: WorkflowCommandToolInputKind;
   required: boolean;
 };
@@ -18,7 +18,9 @@ export type WorkflowCommandSpec = {
   title: string;
   inputKey?: WorkflowCommandInputKey;
   argumentMode?: WorkflowCommandArgumentMode;
+  inputOptional?: boolean;
   acceptsArgs?: boolean;
+  supportsDetach?: boolean;
   description: {
     everywhere: string;
   };
@@ -44,12 +46,14 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     inputKey: "workflow",
     argumentMode: "first",
     acceptsArgs: true,
+    supportsDetach: true,
     description: {
       everywhere: "Run a saved Agent Workflow Kit workflow.",
     },
     dispatch: (service, input) => service.runSavedWorkflow(
       requireInputText(input.workflow, "workflow-run requires workflow"),
       readWorkflowArgs(input.args),
+      { detach: input.detach === true },
     ),
   },
   {
@@ -81,7 +85,7 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     inputKey: "runId",
     argumentMode: "first",
     description: {
-      everywhere: "Resume a stopped workflow record without deleting artifacts.",
+      everywhere: "Re-run a workflow, replaying the unchanged agent prefix from its journal.",
     },
     dispatch: (service, input) => service.resumeRun(requireInputText(input.runId, "workflow-resume requires runId")),
   },
@@ -92,7 +96,7 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     inputKey: "runId",
     argumentMode: "first",
     description: {
-      everywhere: "Stop a workflow record while keeping it resumable.",
+      everywhere: "Stop a workflow run, aborting it if still in flight, while keeping it resumable.",
     },
     dispatch: (service, input) => service.stopRun(requireInputText(input.runId, "workflow-stop requires runId")),
   },
@@ -112,9 +116,21 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     inputKey: "question",
     argumentMode: "join",
     description: {
-      everywhere: "Run the bundled deep-research workflow.",
+      everywhere: "Generate a deep-research workflow for a question and run it.",
     },
     dispatch: (service, input) => service.runDeepResearch(requireInputText(input.question, "deep-research requires question")),
+  },
+  {
+    name: "ultracode",
+    toolName: "ultracode",
+    title: "Ultracode",
+    inputKey: "action",
+    argumentMode: "first",
+    inputOptional: true,
+    description: {
+      everywhere: "Explicitly enable, disable, or report ultracode mode (on|off|status).",
+    },
+    dispatch: (service, input) => service.ultracode(typeof input.action === "string" ? input.action : "status"),
   },
 ] as const;
 
@@ -149,8 +165,9 @@ export function workflowCommandToolInputs(command: WorkflowCatalogEntry): Workfl
   const inputs: WorkflowCommandToolInput[] = [
     { name: "projectRoot", kind: "string", required: false },
   ];
-  if (command.inputKey) inputs.push({ name: command.inputKey, kind: "string", required: true });
+  if (command.inputKey) inputs.push({ name: command.inputKey, kind: "string", required: !command.inputOptional });
   if (command.acceptsArgs) inputs.push({ name: "args", kind: "object", required: false });
+  if (command.supportsDetach) inputs.push({ name: "detach", kind: "boolean", required: false });
   return inputs;
 }
 
@@ -173,6 +190,7 @@ export function workflowCommandToolInputSchema(command: WorkflowCatalogEntry) {
 
 function jsonSchemaFor(kind: WorkflowCommandToolInputKind) {
   if (kind === "object") return { type: "object", additionalProperties: true };
+  if (kind === "boolean") return { type: "boolean" };
   return { type: "string" };
 }
 

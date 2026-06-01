@@ -3,12 +3,14 @@
 import {
   createAliasModelPolicy,
   createWorkflowCommandService,
-  denyDynamicWorkflowPolicy,
   dispatchWorkflowCommand,
   findWorkflowCommandSpec,
   inputForCliArguments,
+  isPermissionMode,
   parseModelAliases,
+  PERMISSION_MODES,
   type PermissionPolicy,
+  permissionPolicyForMode,
   workflowCommandNames,
 } from "@agent-workflow-kit/core";
 
@@ -20,6 +22,8 @@ type ParsedArgs = {
   argsJson?: string | undefined;
   modelAliases: Record<string, string>;
   permissionMode?: string | undefined;
+  sessionModel?: string | undefined;
+  tokenBudget?: number | undefined;
 };
 
 main(process.argv.slice(2)).catch((error) => {
@@ -33,6 +37,8 @@ async function main(argv: string[]) {
     projectRoot: args.projectRoot,
     modelPolicy: createAliasModelPolicy(args.modelAliases),
     permissionPolicy: permissionPolicyFor(args.permissionMode),
+    sessionModel: args.sessionModel,
+    tokenBudget: args.tokenBudget,
   });
   const spec = findWorkflowCommandSpec(args.command);
 
@@ -51,6 +57,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   let argsJson: string | undefined;
   let permissionMode: string | undefined;
   let command: string | undefined;
+  let sessionModel: string | undefined;
+  let tokenBudget: number | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -66,6 +74,24 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--json") {
       json = true;
+      continue;
+    }
+
+    if (arg === "--session-model") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--session-model requires a value");
+      sessionModel = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--token-budget") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--token-budget requires a value");
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) throw new Error("--token-budget requires a positive number");
+      tokenBudget = parsed;
+      index += 1;
       continue;
     }
 
@@ -104,7 +130,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode };
+  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget };
 }
 
 function inputForCliCommand(
@@ -125,9 +151,11 @@ function inputForCliCommand(
 }
 
 function permissionPolicyFor(permissionMode: string | undefined): PermissionPolicy | undefined {
-  if (!permissionMode || permissionMode === "bypassPermissions") return undefined;
-  if (permissionMode === "dontAsk") return denyDynamicWorkflowPolicy;
-  throw new Error(`Unsupported permission mode: ${permissionMode}`);
+  if (!permissionMode) return undefined;
+  if (!isPermissionMode(permissionMode)) {
+    throw new Error(`Unsupported permission mode: ${permissionMode}. Expected one of: ${PERMISSION_MODES.join(", ")}`);
+  }
+  return permissionPolicyForMode(permissionMode);
 }
 
 function parseWorkflowArgsJson(value: string): Record<string, unknown> {
@@ -160,10 +188,42 @@ function formatHuman(value: unknown): string {
     return value.map((entry) => formatHuman(entry)).join("\n");
   }
 
-  if (value && typeof value === "object" && "runId" in value && "status" in value) {
-    const run = value as { runId: string; name?: string; status: string };
-    return [run.runId, run.name, run.status].filter(Boolean).join(" ");
+  if (isRecord(value) && "runId" in value && "status" in value) {
+    return formatRun(value as Record<string, unknown>);
+  }
+
+  if (isRecord(value) && "type" in value && "runId" in value) {
+    return formatEvent(value as Record<string, unknown>);
   }
 
   return JSON.stringify(value);
+}
+
+// A run record: header line plus any error, result summary, and artifact path —
+// instead of dropping everything but runId/name/status.
+function formatRun(run: Record<string, unknown>): string {
+  const lines = [[run.runId, run.name, run.status].filter(Boolean).join(" ")];
+  if (typeof run.error === "string" && run.error) lines.push(`  error: ${run.error}`);
+  if (run.result !== undefined) lines.push(`  result: ${summarize(run.result)}`);
+  const artifacts = run.artifacts as { runJson?: string } | undefined;
+  if (artifacts?.runJson) lines.push(`  run.json: ${artifacts.runJson}`);
+  return lines.join("\n");
+}
+
+// An event: index, type, and the most relevant detail (title/model/error/message).
+function formatEvent(event: Record<string, unknown>): string {
+  const head = [event.index !== undefined ? `#${event.index}` : undefined, event.type]
+    .filter(Boolean)
+    .join(" ");
+  const detail = event.title ?? event.message ?? event.error ?? event.model;
+  return detail ? `${head} ${detail}` : head;
+}
+
+function summarize(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

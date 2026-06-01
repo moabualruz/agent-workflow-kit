@@ -19,5 +19,6 @@ Available skills mirror the shared command catalog:
 - `/workflow-stop`
 - `/workflows`
 - `/deep-research`
+- `/ultracode`
 
 This plugin intentionally ships only skills. Runtime state, event streams, resume/stop operations, artifacts, saved workflow files, and permission behavior are owned by `@agent-workflow-kit/core` and exposed through the CLI.

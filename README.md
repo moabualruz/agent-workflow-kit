@@ -12,21 +12,21 @@ Agent Workflow Kit gives Codex, Gemini CLI, OpenCode, Grok Build, Pi, and Antigr
 
 - Write one persistent JavaScript workflow and run it from multiple agent harnesses.
 - Keep workflow state on disk with `run.json` and `events.jsonl` artifacts.
-- Use familiar commands: `workflow`, `workflow-run`, `workflow-status`, `workflow-events`, `workflow-resume`, `workflow-stop`, `workflows`, and `deep-research`.
-- Preserve Claude-style workflow behavior where it matters: phases, agents, parallel work, pipelines, child workflows, structured args, model aliases, and permission modes.
+- Use familiar commands: `workflow`, `workflow-run`, `workflow-status`, `workflow-events`, `workflow-resume`, `workflow-stop`, `workflows`, `deep-research`, and `ultracode`.
+- Preserve Claude-style workflow behavior where it matters: phases, agents, barrier-free pipelines, error-isolated parallel fan-out, child workflows, structured args, model aliases, permission modes, journal-replay resume, and live cancellation.
 - Avoid protocol-server coupling. The project ships skills, commands, script calls, native tool handlers, and a CLI only.
 
 ## Supported Harnesses
 
-| Harness | Pack | Surface |
-|---|---|---|
-| Claude Code | Native reference only | Uses Claude Code Workflows directly; no replacement plugin is shipped |
-| Codex | `plugins/codex-workflow-kit` | Codex plugin skill that calls the shared CLI |
-| Gemini CLI | `plugins/gemini-workflow-kit` | Gemini extension commands |
-| OpenCode | `plugins/opencode-workflow-kit` | OpenCode native plugin and command files |
-| Grok Build | `plugins/grok-workflow-kit` | Command files that call the shared CLI |
-| Pi | `plugins/pi-workflow-kit` | Pi commands, skills, prompt templates, and registered tools |
-| Antigravity CLI | `plugins/antigravity-workflow-kit` | One skill per shared command |
+| Harness | Pack | Surface | Auto-invoke? |
+|---|---|---|---|
+| Claude Code | Native reference only | Uses Claude Code Workflows directly; no replacement plugin is shipped | Native |
+| Codex | `plugins/codex-workflow-kit` | Skill that calls the shared CLI | Yes (skill) |
+| Gemini CLI | `plugins/gemini-workflow-kit` | Command files | No (manual) |
+| OpenCode | `plugins/opencode-workflow-kit` | Native plugin + command files | Yes (plugin tools) / manual (commands) |
+| Grok Build | `plugins/grok-workflow-kit` | Command files **and** a skill | Yes (skill) / manual (commands) |
+| Pi | `plugins/pi-workflow-kit` | Skill, registered commands + tools | Yes (skill) |
+| Antigravity CLI | `plugins/antigravity-workflow-kit` | One skill per shared command | Yes (skill) |
 
 ## Quick Start
 
@@ -58,15 +58,24 @@ agy plugin install plugins/antigravity-workflow-kit
 
 Claude Code needs no install from this repo. It already owns native Workflows, and this project treats Claude behavior as the compatibility target.
 
+## Two Install Paths: Commands vs Skills
+
+Each harness pack ships its surfaces in two flavors, and you choose how much autonomy to grant:
+
+- **Commands (manual)** — slash-commands you invoke explicitly (`/workflow`, `/deep-research`, `/ultracode`). The agent never starts a workflow or turns on ultracode on its own; nothing auto-fires. Choose this when you want the kit available but fully under your control. Gemini and OpenCode ship command files, and Grok ships them alongside its skill; every command maps 1:1 to a shared CLI call.
+- **Skills (auto-invoke)** — skills carry trigger descriptions, so the agent may invoke them on its own when your request matches (e.g. you say "workflow"/"orchestrate" or ultracode is on). Choose this when you want the agent to reach for workflows proactively. Codex, Pi, Antigravity, and Grok ship skills. OpenCode additionally registers every command as a model-callable plugin tool, so its native-plugin surface is auto-invokable too.
+
+Both paths call the same CLI and produce identical runs; the only difference is **who pulls the trigger**. To get the manual experience on a skills-based harness, install only the command files (skip the skills), or simply don't enable ultracode and invoke commands explicitly. Ultracode itself is always an explicit toggle (`agent-workflow-kit ultracode on`) regardless of path — see [Ultracode](#ultracode--multi-phase-orchestration).
+
 ## First Workflow
 
-Create a persistent workflow from a task prompt:
+Generate a persistent workflow from a task prompt and run it:
 
 ```sh
 agent-workflow-kit workflow "review the pull request and summarize risks" --json
 ```
 
-Run it later by name:
+The generated workflow file is saved under `.agent-workflow-kit/workflows/` (its name and path are recorded on the run's `args.workflow`). Run it again later by name:
 
 ```sh
 agent-workflow-kit workflow-run review-the-pull-request-and-summarize-risks --json
@@ -121,30 +130,88 @@ const result = await agent(`Check release ${args.target}`, { model: "sonnet" });
 return { result };
 ```
 
+## Workflow Semantics
+
+The runtime mirrors Claude Workflows so the same workflow body behaves the same way here:
+
+- **`agent(prompt, options?)`** runs one subagent. Every call is recorded in the run journal with its `requestedModel`, resolved `model`, prompt, result, and token estimate. Calls pass through the agent execution gate, which counts them for observability — no concurrency cap is imposed (the host harness owns real limits).
+- **`parallel(thunks)`** is a barrier: it awaits every thunk before returning. A thunk that throws (or whose agent errors) resolves to `null` in the result array — the call itself never rejects — so callers can `.filter(Boolean)` instead of wrapping each thunk in `try/catch`.
+- **`pipeline(items, ...stages)`** runs each item through all stages independently, with **no barrier between stages**: item A can be in stage 3 while item B is still in stage 1. Wall-clock is the slowest single-item chain, not the sum of the slowest stage per step. Each stage receives `(previousResult, originalItem, index)`. A stage that throws drops that item to `null` and skips its remaining stages.
+- **`workflow(request, args?)`** runs a child workflow inline; it is recorded as a child phase and shares the parent's agent counter (the call-counting gate), execution-order sequence, abort signal, budget, and replay journal. Its `agent()` calls join the parent's single cross-scope replay stream, so resume invalidates one global prefix across parent and child alike.
+- **No kit-imposed limits.** Agent Workflow Kit does not cap concurrency, agent count, tokens, or time — the host harness owns those limits and duplicating them here would fight it. `parallel()` fires all its thunks at once; the harness decides real concurrency. `budget` is **observability only** (read `budget.spent()` / `budget.remaining()` to self-pace) and never blocks or throws.
+
+### Resume
+
+`workflow-resume <run-id>` re-runs the workflow with the original run's args and replays the **longest unchanged prefix** of `agent()` calls from that run's journal. Calls are sequenced in global execution order across every scope — including child `workflow()` calls — so the prefix is a single stream, not one per scope. Each replayed call is matched by stable key + `(prompt, resolvedModel)`; a match returns the cached result instantly (recorded as an `agent:cached` event) without touching the adapter, and re-applies the original call's token estimate so `budget.spent()` is replay-stable. The first call that differs — a changed prompt, a changed model, or a new call inserted anywhere — and everything after it in execution order runs live. An identical script with identical args is a 100% cache hit. If the workflow file changed since the original run, resume still proceeds but records a `run:script-changed` warning; an empty journal records `run:resume-empty-journal` (a full live re-run).
+
+### Stop
+
+`workflow-stop <run-id>` flips the persisted status to `stopped` and, if the run is still in flight in the same runtime, fires its abort signal. The runtime checks the signal before each gated agent call, so a live run unwinds at the next `agent()` boundary and is persisted as `stopped` rather than `failed`. Live cancellation works when stop and run share a runtime — inside one session or a long-running host adapter; a one-shot CLI `workflow-run` that has already exited leaves only the persisted record to stop.
+
+### Background execution
+
+The runtime exposes `runDetached`, which returns the initial `running` handle immediately and executes the workflow in the background, writing the terminal status and a `run:notify` event to the store — pollable with `workflow-status` / `workflow-events`. This is meant for long-running host adapters that stay alive; a one-shot CLI process must remain alive for the background work to finish, so the CLI runs synchronously. A standalone CLI cannot inject a completion notification back into a live conversation or render the in-session `/workflows` progress tree — it matches the data model (phase groups, per-agent events, `log()` lines), not the host's live render.
+
+<!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->
+## Ultracode & multi-phase orchestration
+
+Authoring and running a workflow spins up many subagents and spends real tokens. Author a workflow only when the user typed "workflow"/"workflows", asked for multi-agent orchestration, when **ultracode** is on, when a skill or command instructed it, or when the user named a saved workflow. Otherwise act directly or offer a workflow and let the user opt in.
+
+**Ultracode** is an explicit, persisted project toggle (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) — never ambient. When on, it makes that opt-in standing: author and run a workflow for every substantive task by default, biasing toward adversarial verification (refute -> vote -> converge) over a single pass. A standalone CLI cannot set a host model's reasoning-effort signal; ultracode here is behavior, not a model toggle. Turn it on only when the user asks; when off, revert to the opt-in gate.
+
+For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
+<!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->
+
+Full guidance lives in [`docs/ultracode.md`](docs/ultracode.md).
+
+### Alignment with Claude Code
+
+Agent Workflow Kit tracks [Claude Code's dynamic workflows + ultracode](https://code.claude.com/docs/en/workflows) ([announcement](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code)) as its compatibility target. Feature-by-feature:
+
+| Claude Code | Agent Workflow Kit | Status |
+|---|---|---|
+| `agent(prompt, opts)` with `schema`, `model`, `agentType`, `label`, `phase` | Same options; schema is validated with bounded retry over a JSON Schema **subset** (type/enum/const/required/properties/items + numeric/string/array bounds; `anyOf`/`oneOf`/`allOf`/`$ref`/`pattern`/`format` are not enforced — layer Ajv for full coverage) | ✅ Matches (subset) |
+| `parallel()` barrier — failed thunk → `null`, never rejects | Same; abort re-raises so `stop()` halts a run | ✅ Matches |
+| `pipeline()` — no barrier between stages, `(prev, item, index)` | Same | ✅ Matches |
+| `workflow()` child workflows, one level of nesting | Same; grandchild `workflow()` throws | ✅ Matches |
+| `budget` — read `spent()` / `remaining()` to self-pace | Same shape, observability only | ✅ Matches (see note) |
+| Resume by prefix replay (`resumeFromRunId` / `scriptPath`) | Same; one global execution-order prefix across parent and child scopes, budget-stable replay, script-change warning | ✅ Matches |
+| `phase()` / `log()` progress, persisted run + event log | Same; `run.json` + `events.jsonl` | ✅ Matches |
+| Generated workflow authors a real plan (fan-out + verify) | `workflow` and `deep-research` orchestrate (plan→fan-out→synthesize; gather→refute→converge) | ✅ Matches |
+| Ultracode: standing opt-in, author-per-task, verify-until-converge | Explicit `ultracode` toggle drives the same behavior in skills | ✅ Behavior; toggle is explicit |
+| Concurrency cap `min(16, cores-2)`, 1000-agent lifetime cap | **Intentionally not imposed** — the host harness owns limits | ⚠️ Diverges by design |
+| xhigh reasoning-effort signal | Host model setting; a CLI cannot set it | ⛔ Out of scope |
+| In-session live `/workflows` progress tree | Poll `workflow-status` / `workflow-events` instead | ⛔ Out of scope (data model matched) |
+| `<task-notification>` injected into a live turn | `run:notify` event on a detached run; harness polls | ⛔ Out of scope |
+
+Note on `budget`: Claude treats it as a hard ceiling that throws; Agent Workflow Kit deliberately keeps it observability-only and never enforces a limit, because the host harness already applies its own caps and duplicating them would fight the harness.
+
 ## Workflow Discovery
 
-`workflow-run <name>` resolves workflow files in this order:
+`workflow-run <name-or-path>` resolves a workflow in this order:
 
-1. `.agent-workflow-kit/workflows/<name>.js`
-2. `.claude/workflows/<name>.js`
-3. `scripts/workflows/<name>.workflow.js`
-4. direct `.js` script paths
+1. a direct `.js` script path (absolute, or relative to the project root, when the reference looks like a path)
+2. `.agent-workflow-kit/workflows/<name>.js`
+3. `.claude/workflows/<name>.js`
+4. `scripts/workflows/<name>.workflow.js`
 5. personal `~/.claude/workflows/<name>.js` fallback
+6. bundled built-in workflows (for example `no-write-probe`)
 
-Project files win over personal files so repositories can keep deterministic workflow behavior.
+Project files win over the personal fallback so repositories can keep deterministic workflow behavior.
 
 ## Command Reference
 
 | Command | Purpose |
 |---|---|
-| `workflow "<task>"` | Generate and save a persistent workflow under `.agent-workflow-kit/workflows/` |
+| `workflow "<task>"` | Generate a persistent workflow under `.agent-workflow-kit/workflows/` and run it |
 | `workflow-run <name-or-path>` | Execute a saved workflow name or direct JavaScript file path |
 | `workflow-status <run-id>` | Read the persisted run status and result |
 | `workflow-events <run-id>` | Stream the append-like workflow event log |
-| `workflow-resume <run-id>` | Resume a resumable workflow run |
-| `workflow-stop <run-id>` | Request cancellation for a workflow run |
-| `workflows` | List saved project workflows |
-| `deep-research "<topic>"` | Generate a research workflow for a topic |
+| `workflow-resume <run-id>` | Re-run a workflow, replaying the unchanged agent prefix from its journal |
+| `workflow-stop <run-id>` | Cancel a workflow run, aborting it if still in flight |
+| `workflows` | List persisted workflow runs |
+| `deep-research "<topic>"` | Generate a research workflow for a topic and run it |
+| `ultracode <on\|off\|status>` | Explicitly enable, disable, or report ultracode mode (persisted to project config) |
 
 Common flags:
 
@@ -152,9 +219,10 @@ Common flags:
 |---|---|
 | `--project-root <path>` | Use another project as the workflow root |
 | `--args-json '<json>'` | Pass structured args into `context.args` and Claude-style `args` |
-| `--permission-mode dontAsk` | Deny dynamic workflow execution unless explicitly allowed |
-| `--permission-mode bypassPermissions` | Allow dynamic workflow execution |
+| `--permission-mode <mode>` | One of `default`, `acceptEdits`, `plan`, `bypassPermissions`, or `dontAsk` (unknown values error with the allowed list). `plan`/`dontAsk` deny dynamic execution (fail closed); `default`/`acceptEdits`/`bypassPermissions` allow it |
 | `--model-alias alias=provider/model` | Resolve Claude-style aliases such as `opus`, `sonnet`, or `haiku` |
+| `--session-model <model>` | Model inherited by `agent()` calls that omit `opts.model` |
+| `--token-budget <n>` | Informational output-token target readable via `budget.*` (not enforced) |
 | `--json` | Print machine-readable output |
 
 ## Model Alias Policy
@@ -193,7 +261,7 @@ Each run is stored under:
 └── events.jsonl
 ```
 
-`run.json` holds final status, result, error, and artifact paths. `events.jsonl` records phases, agent starts, agent completions, permission decisions, child workflow records, failures, and cancellation signals.
+`run.json` holds final status, result, error, original args, and artifact paths. `events.jsonl` records phases, agent starts, agent completions, replayed (`agent:cached`) calls, permission decisions, child workflow records, failures, resume markers, and stop signals.
 
 ## Security Model
 
@@ -203,6 +271,7 @@ Each run is stored under:
 - `bypassPermissions` is explicit and visible in command history.
 - Workflow state is local to the project root unless `--project-root` points elsewhere.
 - Generated runtime data lives under `.agent-workflow-kit/`, which is ignored by git.
+- **Workflow files are trusted code.** Both plain `.js` workflows (run via `import()`) and Claude-style bodies (run via `node:vm`) execute with the privileges of the process. The `node:vm` layer is a determinism aid — it shadows `Date.now()`/`Math.random()`/`new Date()` so honest bodies can't accidentally break resume replay — **not** a security sandbox; it does not contain hostile code. Only run workflow files you trust, exactly as you would any script in the repo.
 
 ## Architecture
 
@@ -213,12 +282,16 @@ The shared runtime lives in `packages/core`:
 | `domain.ts` | Workflow domain types and runtime interfaces |
 | `store.ts` | In-memory and file-backed run/event persistence |
 | `runtime.ts` | Workflow execution semantics |
-| `execution-limits.ts` | Per-run agent count and concurrency gates |
+| `execution-limits.ts` | Agent execution gate — observability only (counts agent calls; imposes no concurrency or count cap) |
 | `workflow-authoring.ts` | Generated workflow names and project workflow file writes |
 | `saved-workflows.ts` | Saved workflow lookup and script loading |
 | `command-service.ts` | Application service for workflow commands |
 | `command-catalog.ts` | Public command/tool registry, argument mapping, and native input schemas |
 | `model-policy.ts` | Model alias resolution before harness adapter calls |
+| `permissions.ts` | Permission modes and dynamic-workflow authorization policies |
+| `config.ts` | Project config (`.agent-workflow-kit/config.json`); the explicit ultracode toggle |
+| `schema-validation.ts` | Zero-dependency JSON Schema subset validator for `agent()` schemas |
+| `workflow-meta.ts` | Pure-literal `meta` block parser for Claude-style workflow bodies |
 
 Adapters stay thin: CLI, skills, commands, and native plugin handlers all dispatch through the shared command catalog.
 

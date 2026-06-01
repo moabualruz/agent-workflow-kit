@@ -1,5 +1,6 @@
 export * from "./command-catalog";
 export * from "./command-service";
+export * from "./config";
 export * from "./domain";
 export * from "./errors";
 export * from "./execution-limits";
@@ -8,5 +9,7 @@ export * from "./permissions";
 export * from "./runtime";
 export * from "./saved-workflows";
 export * from "./schema-default-agent";
+export * from "./schema-validation";
 export * from "./store";
 export * from "./workflow-authoring";
+export * from "./workflow-meta";

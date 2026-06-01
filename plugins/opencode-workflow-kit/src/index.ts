@@ -54,6 +54,7 @@ function toolArgs(command: WorkflowCatalogEntry) {
 
 function toolSchemaFor(kind: WorkflowCommandToolInputKind) {
   if (kind === "object") return tool.schema.record(tool.schema.string(), tool.schema.unknown());
+  if (kind === "boolean") return tool.schema.boolean();
   return tool.schema.string();
 }
 

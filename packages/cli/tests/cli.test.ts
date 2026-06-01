@@ -19,7 +19,9 @@ describe("agent-workflow-kit cli", () => {
 
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout);
-    expect(payload.name).toBe("workflow");
+    // Generate-then-run: the saved workflow file is what executes, so the run is
+    // named for the generated workflow and returns the generated script result.
+    expect(payload.name).toBe("inspect-repo");
     expect(payload.status).toBe("completed");
     expect(payload.result).toEqual(expect.objectContaining({ ok: true, task: "inspect repo" }));
   });
@@ -32,20 +34,20 @@ describe("agent-workflow-kit cli", () => {
 
     expect(generated.exitCode).toBe(0);
     const generatedPayload = JSON.parse(generated.stdout);
-    expect(generatedPayload.result.workflow).toEqual({
+    // The generated workflow file is recorded on the run args and persisted to
+    // disk so workflow-run can invoke it by name later.
+    expect(generatedPayload.args.workflow).toEqual({
       name: "inspect-repo",
       path: join(projectRoot, ".agent-workflow-kit", "workflows", "inspect-repo.js"),
     });
-    expect(existsSync(generatedPayload.result.workflow.path)).toBe(true);
+    expect(existsSync(generatedPayload.args.workflow.path)).toBe(true);
 
-    const rerun = await runCli(["workflow-run", generatedPayload.result.workflow.name, "--project-root", projectRoot, "--json"]);
+    const rerun = await runCli(["workflow-run", generatedPayload.args.workflow.name, "--project-root", projectRoot, "--json"]);
 
     expect(rerun.exitCode).toBe(0);
-    expect(JSON.parse(rerun.stdout)).toEqual(expect.objectContaining({
-      name: "inspect-repo",
-      status: "completed",
-      result: { ok: true, task: "inspect repo" },
-    }));
+    const rerunPayload = JSON.parse(rerun.stdout);
+    expect(rerunPayload).toEqual(expect.objectContaining({ name: "inspect-repo", status: "completed" }));
+    expect(rerunPayload.result).toEqual(expect.objectContaining({ ok: true, task: "inspect repo" }));
   });
 
   test("runs no-write-probe and prints machine-readable status", async () => {
@@ -209,7 +211,7 @@ export default function ({ phase, log }) {
     }));
   });
 
-  test("stops and resumes persisted workflow records", async () => {
+  test("stops a persisted workflow record and resume re-runs it with journal replay", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
     const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
@@ -218,9 +220,87 @@ export default function ({ phase, log }) {
     const resumed = await runCli(["workflow-resume", run.runId, "--project-root", projectRoot, "--json"]);
 
     expect(stopped.exitCode).toBe(0);
-    expect(JSON.parse(stopped.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "stopped" }));
+    // Stopping an already-completed run is a no-op — its terminal result is not
+    // downgraded to "stopped".
+    expect(JSON.parse(stopped.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "completed" }));
+
+    // Resume re-runs the workflow (a fresh run id) and completes, replaying the
+    // unchanged agent() prefix from the prior run's journal.
     expect(resumed.exitCode).toBe(0);
-    expect(JSON.parse(resumed.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "stopped" }));
+    const resumedPayload = JSON.parse(resumed.stdout);
+    expect(resumedPayload.status).toBe("completed");
+    expect(resumedPayload.name).toBe("no-write-probe");
+
+    // The prior run's resume marker is recorded on its own event log.
+    const priorEvents = await runCli(["workflow-events", run.runId, "--project-root", projectRoot, "--json"]);
+    expect(JSON.parse(priorEvents.stdout)).toContainEqual(
+      expect.objectContaining({ runId: run.runId, type: "run:resumed" }),
+    );
+  });
+
+  test("resume re-runs a path-launched workflow by its recorded scriptPath", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    // A script OUTSIDE the four name-search directories — only the recorded
+    // scriptPath can resolve it on resume.
+    const scriptPath = join(projectRoot, "outside-dir.js");
+    writeFileSync(scriptPath, `
+export default function ({ phase }) {
+  phase("Outside");
+  return { source: "outside" };
+}
+`);
+
+    const run = JSON.parse((await runCli(["workflow-run", scriptPath, "--project-root", projectRoot, "--json"])).stdout);
+    expect(run.status).toBe("completed");
+    expect(run.scriptPath).toBe(scriptPath);
+
+    const stopped = await runCli(["workflow-stop", run.runId, "--project-root", projectRoot, "--json"]);
+    expect(stopped.exitCode).toBe(0);
+
+    const resumed = await runCli(["workflow-resume", run.runId, "--project-root", projectRoot, "--json"]);
+    expect(resumed.exitCode).toBe(0);
+    const resumedPayload = JSON.parse(resumed.stdout);
+    expect(resumedPayload.status).toBe("completed");
+    expect(resumedPayload.result).toEqual({ source: "outside" });
+  });
+
+  test("permission-mode accepts the full mode enum and rejects unknown values", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    for (const mode of ["default", "acceptEdits", "bypassPermissions"]) {
+      const ok = await runCli(["workflow-run", "no-write-probe", "--permission-mode", mode, "--project-root", projectRoot, "--json"]);
+      expect(ok.exitCode).toBe(0);
+      expect(JSON.parse(ok.stdout).status).toBe("completed");
+    }
+
+    for (const mode of ["plan", "dontAsk"]) {
+      const denied = await runCli(["workflow-run", "no-write-probe", "--permission-mode", mode, "--project-root", projectRoot, "--json"]);
+      expect(JSON.parse(denied.stdout).status).toBe("failed");
+    }
+
+    const bad = await runCli(["workflow-run", "no-write-probe", "--permission-mode", "nonsense", "--project-root", projectRoot, "--json"]);
+    expect(bad.exitCode).toBe(1);
+    expect(bad.stderr).toContain("Expected one of");
+  });
+
+  test("human output surfaces failure reason and renders events without raw JSON", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    // A failed run (denied) must show its error in non-JSON output.
+    const failed = await runCli(["workflow-run", "no-write-probe", "--permission-mode", "dontAsk", "--project-root", projectRoot]);
+    expect(failed.exitCode).toBe(0);
+    expect(failed.stdout).toContain("error:");
+    expect(failed.stdout).toContain("denied");
+
+    // Events render as readable lines (#index type ...), not a raw JSON dump.
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+    const events = await runCli(["workflow-events", run.runId, "--project-root", projectRoot]);
+    expect(events.exitCode).toBe(0);
+    expect(events.stdout).toContain("phase");
+    expect(events.stdout).not.toContain("{\"runId\"");
   });
 
   test("deep-research command writes a workflow run with artifact-safe summary", async () => {
@@ -231,7 +311,9 @@ export default function ({ phase, log }) {
 
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout);
-    expect(payload.name).toBe("deep-research");
+    // Generate-then-run: deep-research generates a research workflow named for
+    // the question and executes it.
+    expect(payload.name).toBe("compare-workflow-harnesses");
     expect(payload.status).toBe("completed");
     expect(payload.artifacts).toEqual({
       root: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId),
@@ -240,7 +322,7 @@ export default function ({ phase, log }) {
     });
     expect(existsSync(payload.artifacts.runJson)).toBe(true);
     expect(existsSync(payload.artifacts.eventsJsonl)).toBe(true);
-    expect(payload.result).toEqual({ ok: true, question: "compare workflow harnesses" });
+    expect(payload.result).toEqual(expect.objectContaining({ ok: true, question: "compare workflow harnesses" }));
   });
 
   test("model aliases resolve through persisted workflow events", async () => {
@@ -297,6 +379,50 @@ export default async function ({ agent }) {
     const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
     expect(events).toContain("\"requestedModel\":\"sonnet\"");
     expect(events).toContain("\"model\":\"provider/balanced-worker\"");
+  });
+
+  test("--token-budget reaches the workflow budget as an informational target", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "budget-probe.js"), `
+export default async function ({ budget }) {
+  return { total: budget.total };
+}
+`);
+
+    const result = await runCli(["workflow-run", "budget-probe", "--token-budget", "5000", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).result).toEqual({ total: 5000 });
+  });
+
+  test("--session-model is inherited by agent() calls that omit a model", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "session-probe.js"), `
+export default async function ({ agent }) {
+  return agent("no model here");
+}
+`);
+
+    const result = await runCli(["workflow-run", "session-probe", "--session-model", "sess/default", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
+    expect(events).toContain("\"model\":\"sess/default\"");
+  });
+
+  test("--token-budget rejects non-positive values", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const result = await runCli(["workflow-run", "no-write-probe", "--token-budget", "nope", "--project-root", projectRoot, "--json"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--token-budget requires a positive number");
   });
 });
 

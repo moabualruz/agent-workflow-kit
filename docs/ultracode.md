@@ -1,14 +1,8 @@
-Create, persist, and run an Agent Workflow Kit workflow.
+# Ultracode & Multi-Phase Orchestration
 
-CLI fallback:
+Canonical guidance shared across every harness pack. Keep the marked block below
+in sync with the per-pack SKILL/command copies.
 
-```sh
-agent-workflow-kit workflow "<task>" --json
-```
-
-The JSON result includes `args.workflow.name` and `args.workflow.path` for later `workflow-run`.
-
-Return only run id, status, and artifact path.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->
 ## Ultracode & multi-phase orchestration
 
@@ -18,3 +12,16 @@ Authoring and running a workflow spins up many subagents and spends real tokens.
 
 For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->
+
+Example sequence:
+
+```sh
+# 1. understand
+agent-workflow-kit workflow "map how subsystem X works" --json
+# inspect the run, then drive the next phase
+agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-events <run-id> --json
+
+# 2. design → 3. implement → 4. review, each its own workflow / workflow-run
+agent-workflow-kit workflow "design the change to X based on the findings" --json
+```

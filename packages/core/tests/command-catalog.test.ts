@@ -29,6 +29,7 @@ describe("workflow command catalog", () => {
       "workflow-stop",
       "workflows",
       "deep-research",
+      "ultracode",
     ]);
     expect(workflowToolNames).toEqual([
       "workflow",
@@ -39,6 +40,7 @@ describe("workflow command catalog", () => {
       "workflow_stop",
       "workflows",
       "deep_research",
+      "ultracode",
     ]);
     expect(workflowCommandCatalog.map((command) => command.description.everywhere)).not.toContain("");
   });
@@ -70,6 +72,7 @@ describe("workflow command catalog", () => {
       { name: "projectRoot", kind: "string", required: false },
       { name: "workflow", kind: "string", required: true },
       { name: "args", kind: "object", required: false },
+      { name: "detach", kind: "boolean", required: false },
     ]);
     expect(workflowCommandToolInputSchema(workflowRun)).toEqual({
       type: "object",
@@ -77,9 +80,42 @@ describe("workflow command catalog", () => {
         projectRoot: { type: "string" },
         workflow: { type: "string" },
         args: { type: "object", additionalProperties: true },
+        detach: { type: "boolean" },
       },
       required: ["workflow"],
       additionalProperties: false,
     });
+
+    const ultracode = workflowCommandCatalog.find((command) => command.name === "ultracode");
+    if (!ultracode) throw new Error("missing ultracode command");
+    expect(workflowCommandToolInputs(ultracode)).toEqual([
+      { name: "projectRoot", kind: "string", required: false },
+      { name: "action", kind: "string", required: false },
+    ]);
+    expect(workflowCommandToolInputSchema(ultracode)).toEqual({
+      type: "object",
+      properties: {
+        projectRoot: { type: "string" },
+        action: { type: "string" },
+      },
+      required: [],
+      additionalProperties: false,
+    });
+  });
+
+  test("dispatch exposes detached workflow-run for native host tools", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-command-catalog-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({ projectRoot });
+
+    const run = await dispatchWorkflowCommand(service, "workflow-run", {
+      workflow: "no-write-probe",
+      detach: true,
+    });
+
+    expect(run).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "running",
+    }));
   });
 });

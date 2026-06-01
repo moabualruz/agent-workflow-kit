@@ -6,6 +6,6 @@ CLI fallback:
 agent-workflow-kit workflow "<task>" --json
 ```
 
-The JSON result includes `result.workflow.name` and `result.workflow.path` for later `workflow-run`.
+The JSON result includes `args.workflow.name` and `args.workflow.path` for later `workflow-run`.
 
 Return only run id, status, and artifact path.

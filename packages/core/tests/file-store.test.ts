@@ -76,11 +76,9 @@ describe("file workflow store", () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-store-"));
     roots.push(projectRoot);
     const store = createFileStore({ projectRoot });
-    const runtime = createWorkflowRuntime({
-      store,
-      agent: async () => ({ ok: true }),
-    });
-    const run = await runtime.run({ name: "no-write-probe", script: async () => ({ ok: true }) });
+    // A still-running run is the legitimate target of stop(); create one directly
+    // so it is not already terminal when stopped.
+    const run = store.createRun("no-write-probe");
 
     const stopped = store.stop(run.runId);
     const resumed = store.resume(run.runId);
@@ -90,5 +88,23 @@ describe("file workflow store", () => {
     expect(store.eventsFor(run.runId).map((event) => event.type)).toContain("run:stopped");
     expect(store.eventsFor(run.runId).map((event) => event.type)).toContain("run:resumed");
     expect(readFileSync(join(projectRoot, ".agent-workflow-kit", "runs", run.runId, "run.json"), "utf8")).toContain("stopped");
+  });
+
+  test("stop() never downgrades an already-completed run", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-store-"));
+    roots.push(projectRoot);
+    const store = createFileStore({ projectRoot });
+    const runtime = createWorkflowRuntime({
+      store,
+      agent: async () => ({ ok: true }),
+    });
+    const run = await runtime.run({ name: "no-write-probe", script: async () => ({ ok: true }) });
+    expect(run.status).toBe("completed");
+
+    // A stop() that races a just-finished run (or a user stopping a done run)
+    // must keep the completed result, not relabel it "stopped".
+    const stopped = store.stop(run.runId);
+    expect(stopped.status).toBe("completed");
+    expect(store.getRun(run.runId).status).toBe("completed");
   });
 });

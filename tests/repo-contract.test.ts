@@ -49,6 +49,8 @@ describe("standalone repository contract", () => {
     for (const file of walk(repoRoot)) {
       const relative = file.replace(repoRoot, "");
       if (relative.includes("/.git/") || relative.includes("/node_modules/") || relative.endsWith("bun.lock")) continue;
+      // .agent-workflow-kit/ is gitignored runtime + research data, never shipped.
+      if (relative.includes(".agent-workflow-kit/")) continue;
       if (relative.includes("tests/")) continue;
 
       const lowerPath = relative.toLowerCase();
@@ -79,6 +81,43 @@ describe("standalone repository contract", () => {
     expect(rootPackage.bin?.["agent-workflow-kit"]).toBe("packages/cli/src/cli.ts");
   });
 
+  test("README command summary names every shared workflow command", () => {
+    const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+    const summary = readme.match(/Use familiar commands: (?<commands>.+)\./)?.groups?.commands ?? "";
+
+    for (const command of workflowCommandNames) {
+      expect(summary, command).toContain(`\`${command}\``);
+    }
+  });
+
+  test("source and docs files stay text-clean", () => {
+    const offenders: string[] = [];
+    for (const file of walk(repoRoot)) {
+      const relative = file.replace(repoRoot, "");
+      if (relative.includes("/.git/") || relative.includes("/node_modules/") || relative.endsWith("bun.lock")) continue;
+      if (!/\.(?:ts|tsx|js|jsx|json|md|toml|yml|yaml|txt|gitignore)$/.test(relative)) continue;
+
+      const bytes = readFileSync(file);
+      if (bytes.includes(0)) offenders.push(relative);
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("documentation does not present shell pipes as ultracode action placeholders", () => {
+    const offenders: string[] = [];
+    for (const file of walk(repoRoot)) {
+      const relative = file.replace(repoRoot, "");
+      if (relative.includes("/.git/") || relative.includes("/node_modules/") || relative.endsWith("bun.lock")) continue;
+      if (!/\.(?:md|toml)$/.test(relative)) continue;
+
+      const text = readFileSync(file, "utf8");
+      if (text.includes("agent-workflow-kit ultracode on|off|status --json")) offenders.push(relative);
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   test("non-Claude command shims point at the shared CLI instead of placeholder prose", () => {
     const commandFiles = [
       "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
@@ -98,6 +137,7 @@ describe("standalone repository contract", () => {
       expect(text).toContain("workflow-resume");
       expect(text).toContain("workflow-stop");
       expect(text).toContain("deep-research");
+      expect(text).toContain("ultracode");
     }
   });
 
@@ -125,6 +165,31 @@ describe("standalone repository contract", () => {
       expect(text).toContain(`name: ${command}`);
       expect(text).toContain(`agent-workflow-kit ${command}`);
     }
+  });
+
+  test("Ultracode guidance copies stay synced from the canonical docs block", () => {
+    const canonical = normalizedUltracodeBlock(readFileSync(join(repoRoot, "docs/ultracode.md"), "utf8"));
+    for (const file of [
+      "README.md",
+      "plugins/antigravity-workflow-kit/skills/workflow/SKILL.md",
+      "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/gemini-workflow-kit/commands/workflow.toml",
+      "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/opencode-workflow-kit/commands/workflow.md",
+      "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+    ]) {
+      expect(normalizedUltracodeBlock(readFileSync(join(repoRoot, file), "utf8")), file).toBe(canonical);
+    }
+  });
+
+  test("ignores Claude runtime locks without hiding project workflows", () => {
+    const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+    const ignoredLines = gitignore.split(/\r?\n/).map((line) => line.trim());
+
+    expect(gitignore).toContain(".claude/scheduled_tasks.lock");
+    expect(ignoredLines).not.toContain(".claude/");
+    expect(ignoredLines).not.toContain(".claude/workflows");
+    expect(ignoredLines).not.toContain(".claude/workflows/");
   });
 
   test("generic repo files do not mention downstream project names", () => {
@@ -158,4 +223,13 @@ function walk(dir: string): string[] {
   }
 
   return files;
+}
+
+function normalizedUltracodeBlock(text: string): string {
+  const match = /<!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->([\s\S]*?)<!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->/.exec(text);
+  expect(match?.[1]).toBeDefined();
+  return (match?.[1] ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*#\s?/gm, "")
+    .trim();
 }

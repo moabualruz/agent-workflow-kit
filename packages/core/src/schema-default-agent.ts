@@ -1,11 +1,5 @@
 import type { AgentFunction } from "./domain";
-
-type JsonSchemaLike = {
-  type?: string | string[];
-  enum?: unknown[];
-  properties?: Record<string, JsonSchemaLike>;
-  items?: JsonSchemaLike;
-};
+import type { JsonSchemaLike } from "./schema-validation";
 
 export const schemaDefaultAgent: AgentFunction = async (_prompt, options) => {
   if (options?.schema) return defaultForSchema(options.schema);
@@ -24,7 +18,7 @@ function defaultForSchema(schema: unknown): unknown {
     }
     return output;
   }
-  if (type === "array") return [];
+  if (type === "array") return []; // empty array satisfies structural defaults
   if (type === "string") return "";
   if (type === "integer" || type === "number") return 0;
   if (type === "boolean") return false;

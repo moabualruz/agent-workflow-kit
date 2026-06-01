@@ -268,4 +268,113 @@ export default function () {
       rmSync(homeRoot, { recursive: true, force: true });
     }
   });
+
+  test("Claude-style bodies cannot call Math.random() (determinism guard for resume)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-determinism-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "rand.js"), `
+export const meta = { name: "rand", phases: [{ title: "Rand" }] };
+phase("Rand");
+return { r: Math.random() };
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow("rand");
+
+      expect(run.status).toBe("failed");
+      expect(run.error).toContain("Non-deterministic API is not allowed");
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Claude-style bodies cannot call Date.now() or new Date() but keep deterministic Date helpers", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-determinism-date-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "now.js"), `
+export const meta = { name: "now", phases: [{ title: "Now" }] };
+phase("Now");
+return { t: Date.now() };
+`);
+      writeFileSync(join(workflowsRoot, "parse.js"), `
+export const meta = { name: "parse", phases: [{ title: "Parse" }] };
+phase("Parse");
+return { ms: Date.parse("2020-01-01T00:00:00Z") };
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const now = await service.runSavedWorkflow("now");
+      expect(now.status).toBe("failed");
+      expect(now.error).toContain("Non-deterministic API is not allowed");
+
+      // Date.parse is deterministic and must still work.
+      const parse = await service.runSavedWorkflow("parse");
+      expect(parse.status).toBe("completed");
+      expect(parse.result).toEqual({ ms: 1577836800000 });
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("per-phase meta model is applied to agent calls within that phase", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-phase-model-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "phased.js"), `
+export const meta = {
+  name: "phased",
+  description: "phase model probe",
+  model: "run-default",
+  phases: [
+    { title: "Review", model: "review-model" },
+    { title: "Plain" }
+  ]
+};
+phase("Review");
+const a = await agent("review step");
+phase("Plain");
+const b = await agent("plain step");
+return { a, b };
+`);
+      const service = createWorkflowCommandService({
+        projectRoot,
+        agent: async (_prompt, options) => ({ model: options?.model }),
+      });
+
+      const run = await service.runSavedWorkflow("phased");
+
+      expect(run.status).toBe("completed");
+      // Review phase → its phase model; Plain phase (no phase model) → run model.
+      expect(run.result).toEqual({ a: { model: "review-model" }, b: { model: "run-default" } });
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Claude-style bodies do not get require injected (no casual filesystem use)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-determinism-fs-"));
+    try {
+      const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+      mkdirSync(workflowsRoot, { recursive: true });
+      writeFileSync(join(workflowsRoot, "fs.js"), `
+export const meta = { name: "fs", phases: [{ title: "Fs" }] };
+phase("Fs");
+return { has: typeof require };
+`);
+      const service = createWorkflowCommandService({ projectRoot });
+
+      const run = await service.runSavedWorkflow("fs");
+
+      // require is undefined in the sandbox, so the body completes but cannot reach fs.
+      expect(run.status).toBe("completed");
+      expect(run.result).toEqual({ has: "undefined" });
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
 });

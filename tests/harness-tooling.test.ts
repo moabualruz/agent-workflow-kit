@@ -51,12 +51,13 @@ describe("harness direct workflow tools", () => {
       directory: projectRoot,
       worktree: projectRoot,
     } as any)));
-    const generatedName = generated.result.workflow.name;
+    const generatedName = generated.args.workflow.name;
 
     expect(generated).toEqual(expect.objectContaining({
-      name: "workflow",
+      name: "native-generated",
       status: "completed",
-      result: expect.objectContaining({
+      result: expect.objectContaining({ ok: true, task: "native generated" }),
+      args: expect.objectContaining({
         task: "native generated",
         workflow: {
           name: "native-generated",
@@ -76,7 +77,7 @@ describe("harness direct workflow tools", () => {
     expect(generatedRun).toEqual(expect.objectContaining({
       name: "native-generated",
       status: "completed",
-      result: { ok: true, task: "native generated" },
+      result: expect.objectContaining({ ok: true, task: "native generated" }),
     }));
 
     const result = await hooks.tool?.workflow_run?.execute({
@@ -167,12 +168,13 @@ export default async function ({ agent }) {
     expect(tools.map((tool) => tool.name)).toEqual(workflowToolNames);
 
     const generated = await commands.find((command) => command.name === "workflow")?.handler("native generated");
-    const generatedWorkflow = (generated as any).result.workflow;
+    const generatedWorkflow = (generated as any).args.workflow;
 
     expect(generated).toEqual(expect.objectContaining({
-      name: "workflow",
+      name: "native-generated",
       status: "completed",
-      result: expect.objectContaining({
+      result: expect.objectContaining({ ok: true, task: "native generated" }),
+      args: expect.objectContaining({
         task: "native generated",
         workflow: {
           name: "native-generated",
@@ -186,7 +188,7 @@ export default async function ({ agent }) {
     expect(generatedRun).toEqual(expect.objectContaining({
       name: "native-generated",
       status: "completed",
-      result: { ok: true, task: "native generated" },
+      result: expect.objectContaining({ ok: true, task: "native generated" }),
     }));
 
     const commandRun = await commands.find((command) => command.name === "workflow-run")?.handler("no-write-probe");
@@ -196,13 +198,13 @@ export default async function ({ agent }) {
       task: "tool generated",
       projectRoot,
     });
-    const toolGeneratedName = (toolGenerated as any).details.result.workflow.name;
+    const toolGeneratedName = (toolGenerated as any).details.args.workflow.name;
 
     expect(toolGenerated).toEqual(expect.objectContaining({
-      content: [{ type: "text", text: expect.stringContaining("\"name\":\"workflow\"") }],
+      content: [{ type: "text", text: expect.stringContaining("\"name\":\"tool-generated\"") }],
       details: expect.objectContaining({
         status: "completed",
-        result: expect.objectContaining({ task: "tool generated" }),
+        result: expect.objectContaining({ ok: true, task: "tool generated" }),
       }),
     }));
 
@@ -215,7 +217,7 @@ export default async function ({ agent }) {
       details: expect.objectContaining({
         name: "tool-generated",
         status: "completed",
-        result: { ok: true, task: "tool generated" },
+        result: expect.objectContaining({ ok: true, task: "tool generated" }),
       }),
     }));
 
