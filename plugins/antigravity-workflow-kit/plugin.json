@@ -1,5 +1,5 @@
 {
   "name": "antigravity-workflow-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude Workflows-style orchestration skills for Antigravity CLI."
 }

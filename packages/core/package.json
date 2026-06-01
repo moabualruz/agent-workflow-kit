@@ -1,6 +1,6 @@
 {
   "name": "@agent-workflow-kit/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared workflow runtime, event store, command catalog, and model policy for Agent Workflow Kit.",
   "type": "module",
   "main": "./src/index.ts",
