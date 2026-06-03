@@ -1,4 +1,4 @@
-import { tool, type Plugin } from "@opencode-ai/plugin";
+import { tool, type Plugin, type ToolContext } from "@opencode-ai/plugin";
 import {
   createAliasModelPolicy,
   createWorkflowCommandService,
@@ -6,9 +6,13 @@ import {
   parseModelAliases,
   workflowCommandCatalog,
   workflowCommandToolInputs,
+  type PermissionPolicy,
+  type WorkflowPermissionRequest,
   type WorkflowCatalogEntry,
   type WorkflowCommandToolInputKind,
 } from "../../../packages/core/src/index";
+
+const WORKFLOW_PERMISSION = "agent-workflow-kit.workflow";
 
 export const server: Plugin = async (input) => {
   const projectRoot = input.directory || process.cwd();
@@ -21,7 +25,7 @@ export const server: Plugin = async (input) => {
         args: toolArgs(command),
         async execute(args, context) {
           return stringify(await dispatchWorkflowCommand(
-            service(readOptionalString(args.projectRoot), context.directory ?? projectRoot),
+            service(readOptionalString(args.projectRoot), context.directory ?? projectRoot, context),
             command.name,
             args,
           ));
@@ -38,10 +42,11 @@ export const workflowKitPlugin = {
 
 export default workflowKitPlugin;
 
-function service(projectRoot: string | undefined, fallbackRoot: string) {
+function service(projectRoot: string | undefined, fallbackRoot: string, context: ToolContext) {
   return createWorkflowCommandService({
     projectRoot: projectRoot?.trim() || fallbackRoot,
     modelPolicy: createAliasModelPolicy(parseModelAliases(process.env.AGENT_WORKFLOW_KIT_MODEL_ALIASES)),
+    permissionPolicy: permissionPolicyForOpenCode(context),
   });
 }
 
@@ -53,7 +58,7 @@ function toolArgs(command: WorkflowCatalogEntry) {
 }
 
 function toolSchemaFor(kind: WorkflowCommandToolInputKind) {
-  if (kind === "object") return tool.schema.record(tool.schema.string(), tool.schema.unknown());
+  if (kind === "json") return tool.schema.unknown();
   if (kind === "boolean") return tool.schema.boolean();
   return tool.schema.string();
 }
@@ -64,4 +69,56 @@ function readOptionalString(value: unknown): string | undefined {
 
 function stringify(value: unknown): string {
   return JSON.stringify(value);
+}
+
+function permissionPolicyForOpenCode(context: Partial<Pick<ToolContext, "ask">>): PermissionPolicy | undefined {
+  if (typeof context.ask !== "function") return undefined;
+  return {
+    async authorizeDynamicWorkflow(request) {
+      try {
+        await context.ask!(permissionAskInputFor(request));
+        return { allowed: true };
+      } catch (error) {
+        return {
+          allowed: false,
+          reason: `OpenCode permission denied: ${errorMessage(error)}`,
+        };
+      }
+    },
+  };
+}
+
+function permissionAskInputFor(request: WorkflowPermissionRequest) {
+  return {
+    permission: WORKFLOW_PERMISSION,
+    patterns: permissionPatternsFor(request),
+    always: [WORKFLOW_PERMISSION],
+    metadata: permissionMetadataFor(request),
+  };
+}
+
+function permissionPatternsFor(request: WorkflowPermissionRequest): string[] {
+  return [
+    `workflow:${request.name}`,
+    ...(request.scriptPath ? [`script:${request.scriptPath}`] : []),
+    ...(request.origin ? [`origin:${request.origin}`] : []),
+    ...request.writeHints.map((hint) => `write:${hint}`),
+  ];
+}
+
+function permissionMetadataFor(request: WorkflowPermissionRequest): Record<string, unknown> {
+  return {
+    name: request.name,
+    argsPreview: request.argsPreview,
+    generated: request.generated,
+    isolationHints: request.isolationHints,
+    writeHints: request.writeHints,
+    ...(request.scriptPath ? { scriptPath: request.scriptPath } : {}),
+    ...(request.origin ? { origin: request.origin } : {}),
+    ...(request.agentCountEstimate !== undefined ? { agentCountEstimate: request.agentCountEstimate } : {}),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -15,9 +15,9 @@ Use `--project-root "${AGENT_WORKFLOW_KIT_PROJECT_ROOT:-$PWD}"` when the active 
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->
 ## Ultracode & multi-phase orchestration
 
-Authoring and running a workflow spins up many subagents and spends real tokens. Author a workflow only when the user typed "workflow"/"workflows", asked for multi-agent orchestration, when **ultracode** is on, when a skill or command instructed it, or when the user named a saved workflow. Otherwise act directly or offer a workflow and let the user opt in.
+Authoring and running a workflow spins up many subagents and spends real tokens. Author a workflow only when the user typed "workflow"/"workflows", asked for multi-agent orchestration, when the **ultracode** standing opt-in or keyword trigger applies, when a skill or command instructed it, or when the user named a saved workflow. Otherwise act directly or offer a workflow and let the user opt in.
 
-**Ultracode** is an explicit, persisted project toggle (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) — never ambient. When on, it makes that opt-in standing: author and run a workflow for every substantive task by default, biasing toward adversarial verification (refute -> vote -> converge) over a single pass. A standalone CLI cannot set a host model's reasoning-effort signal; ultracode here is behavior, not a model toggle. Turn it on only when the user asks; when off, revert to the opt-in gate.
+**Ultracode** has three separate meanings in this kit. The standing opt-in is the persisted project behavior (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) that author-runs a workflow for substantive tasks by default. The keyword trigger is recorded separately as `ultracodeKeywordTriggerEnabled` and is disabled when workflows are disabled. Model effort is host-owned: this standalone CLI reports model effort as unsupported and records `ultracodeEffortMode: "orchestration-only"` when orchestration is enabled. Turn ultracode on only when the user asks; when off, revert to the opt-in gate.
 
 For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->

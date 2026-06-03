@@ -37,8 +37,8 @@ describe("headless smoke contract", () => {
       haiku: "opencode/deepseek-v4-flash-free",
     });
     expect(approvedModelAliasMaps.pi).toEqual({
-      opus: "openai-codex/gpt-5.5",
-      sonnet: "openai-codex/gpt-5.3-codex",
+      opus: "opencode-go/deepseek-v4-pro",
+      sonnet: "opencode-go/qwen3.6-plus",
       haiku: "opencode/deepseek-v4-flash-free",
     });
 

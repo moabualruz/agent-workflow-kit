@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentJournalEntry, WorkflowArgs, WorkflowArtifacts, WorkflowEvent, WorkflowRun } from "./domain";
+import type { AgentJournalEntry, AgentTranscript, WorkflowArgs, WorkflowArtifacts, WorkflowEvent, WorkflowRun } from "./domain";
 import { stringifyError } from "./errors";
 
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
@@ -17,16 +17,16 @@ export function createMemoryStore() {
         runId: `wf_${randomUUID().slice(0, 12)}`,
         name,
         status: "running",
-        ...(args ? { args } : {}),
+        ...(args !== undefined ? { args } : {}),
         ...(scriptPath ? { scriptPath } : {}),
       };
       runs.set(run.runId, run);
-      events.set(run.runId, [{ runId: run.runId, type: "run:started" }]);
+      events.set(run.runId, [stampEvent({ runId: run.runId, type: "run:started" })]);
       return run;
     },
 
     append(event: WorkflowEvent): void {
-      events.get(event.runId)?.push(event);
+      events.get(event.runId)?.push(stampEvent(event));
     },
 
     complete(runId: string, result: unknown): WorkflowRun {
@@ -35,7 +35,7 @@ export function createMemoryStore() {
       if (run.status === "stopped" || run.status === "failed") return { ...run };
       run.status = "completed";
       run.result = result;
-      events.get(runId)?.push({ runId, type: "run:completed", result });
+      events.get(runId)?.push(stampEvent({ runId, type: "run:completed", result }));
       return { ...run };
     },
 
@@ -43,7 +43,7 @@ export function createMemoryStore() {
       const run = getRun(runs, runId);
       run.status = "failed";
       run.error = stringifyError(error);
-      events.get(runId)?.push({ runId, type: "run:failed", error: run.error });
+      events.get(runId)?.push(stampEvent({ runId, type: "run:failed", error: run.error }));
       return { ...run };
     },
 
@@ -64,15 +64,17 @@ export function createFileStore(options: { projectRoot: string }) {
   return {
     createRun(name: string, args?: WorkflowArgs, scriptPath?: string): WorkflowRun {
       const runId = `wf_${randomUUID().slice(0, 12)}`;
+      const artifacts = artifactPaths(runsRoot, runId);
       const run: WorkflowRun = {
         runId,
         name,
         status: "running",
-        artifacts: artifactPaths(runsRoot, runId),
-        ...(args ? { args } : {}),
+        artifacts,
+        ...(args !== undefined ? { args } : {}),
         ...(scriptPath ? { scriptPath } : {}),
       };
       mkdirSync(runDir(runsRoot, run.runId), { recursive: true });
+      mkdirSync(artifacts.transcriptDir, { recursive: true });
       writeRun(runsRoot, run);
       appendEvent(runsRoot, { runId: run.runId, type: "run:started" });
       return run;
@@ -201,6 +203,17 @@ export function createFileStore(options: { projectRoot: string }) {
       }
       return entries;
     },
+
+    writeAgentTranscript(entry: AgentTranscript): string {
+      const transcript = stampTranscript(entry);
+      const path = join(
+        artifactPaths(runsRoot, entry.runId).transcriptDir,
+        `${String(entry.seq).padStart(4, "0")}-${safeArtifactName(entry.key)}.json`,
+      );
+      mkdirSync(artifactPaths(runsRoot, entry.runId).transcriptDir, { recursive: true });
+      writeFileSync(path, `${JSON.stringify(transcript, null, 2)}\n`);
+      return path;
+    },
   };
 }
 
@@ -226,7 +239,19 @@ function readRun(runsRoot: string, runId: string): WorkflowRun {
 
 function appendEvent(runsRoot: string, event: WorkflowEvent): void {
   mkdirSync(runDir(runsRoot, event.runId), { recursive: true });
-  appendFileSync(join(runDir(runsRoot, event.runId), "events.jsonl"), `${JSON.stringify(event)}\n`);
+  appendFileSync(join(runDir(runsRoot, event.runId), "events.jsonl"), `${JSON.stringify(stampEvent(event))}\n`);
+}
+
+function stampEvent(event: WorkflowEvent): WorkflowEvent {
+  return event.timestamp ? event : { ...event, timestamp: new Date().toISOString() };
+}
+
+function stampTranscript(entry: AgentTranscript): AgentTranscript {
+  return entry.timestamp ? entry : { ...entry, timestamp: new Date().toISOString() };
+}
+
+function safeArtifactName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "agent";
 }
 
 function artifactPaths(runsRoot: string, runId: string): WorkflowArtifacts {
@@ -235,5 +260,6 @@ function artifactPaths(runsRoot: string, runId: string): WorkflowArtifacts {
     root,
     runJson: join(root, "run.json"),
     eventsJsonl: join(root, "events.jsonl"),
+    transcriptDir: join(root, "transcripts"),
   };
 }

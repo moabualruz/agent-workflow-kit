@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkflowCommandService, denyDynamicWorkflowPolicy } from "../src/index";
@@ -39,6 +39,101 @@ describe("workflow command service", () => {
     expect(resumed).toEqual(expect.objectContaining({ name: "no-write-probe", status: "completed" }));
     expect(resumed.runId).not.toBe(run.runId);
     expect(prior).toEqual(expect.objectContaining({ runId: run.runId, status: "completed" }));
+  });
+
+  test("launches saved workflows with Claude-shaped async output", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-launch-output-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({
+      projectRoot,
+      agent: async () => ({ ok: true }),
+    });
+
+    const launch = await service.launchSavedWorkflow("no-write-probe", ["1024", "1025"]);
+
+    expect(launch).toEqual(expect.objectContaining({
+      status: "async_launched",
+      summary: "Started workflow no-write-probe",
+    }));
+    expect(launch.taskId).toMatch(/^task_wf_/);
+    expect(launch.runId).toMatch(/^wf_/);
+    expect(launch.transcriptDir).toContain(join(".agent-workflow-kit", "runs", launch.runId!, "transcripts"));
+    expect(launch.scriptPath).toBeUndefined();
+
+    const run = service.getRun(launch.runId!);
+    expect(run).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      args: ["1024", "1025"],
+    }));
+  });
+
+  test("runs source-string workflows through the public invocation object and persists the script", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-source-input-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({ projectRoot });
+    const source = `
+export default function ({ args }) {
+  return { ok: true, args };
+}
+`;
+
+    const run = await service.runWorkflow({
+      name: "inline-probe",
+      script: source,
+      args: ["from", "source"],
+    });
+
+    const scriptPath = join(projectRoot, ".agent-workflow-kit", "workflows", "inline-probe.js");
+    expect(run).toEqual(expect.objectContaining({
+      name: "inline-probe",
+      status: "completed",
+      scriptPath,
+      result: { ok: true, args: ["from", "source"] },
+    }));
+    expect(readFileSync(scriptPath, "utf8")).toBe(source);
+  });
+
+  test("status and list project workflow progress from persisted events", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-progress-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "progress-probe.js"), `
+export default async function ({ phase, agent }) {
+  phase("Plan");
+  await agent("plan output", { label: "planner" });
+  phase("Build");
+  await agent("build output", { label: "builder" });
+  return { ok: true };
+}
+`);
+    const service = createWorkflowCommandService({
+      projectRoot,
+      agent: async (prompt) => `${prompt} result`,
+    });
+
+    const run = await service.runSavedWorkflow("progress-probe");
+    const status = service.getRun(run.runId);
+    const listed = service.listRuns().find((entry) => entry.runId === run.runId);
+
+    expect(status.progress).toEqual(expect.objectContaining({
+      runId: run.runId,
+      status: "completed",
+      agentTotal: 2,
+      agentDone: 2,
+      agentRunning: 0,
+      agentFailed: 0,
+    }));
+    expect(status.progress?.tokenTotal).toBeGreaterThan(0);
+    expect(status.progress?.phases).toEqual([
+      expect.objectContaining({ title: "Plan", agentTotal: 1, agentDone: 1 }),
+      expect.objectContaining({ title: "Build", agentTotal: 1, agentDone: 1 }),
+    ]);
+    expect(status.progress?.recentEvents.map((event) => event.type)).toContain("run:completed");
+    expect(listed?.progress).toEqual(expect.objectContaining({
+      runId: run.runId,
+      agentTotal: 2,
+    }));
   });
 
   test("runs ad hoc and deep-research workflows without exposing transcript text", async () => {
@@ -81,6 +176,16 @@ describe("workflow command service", () => {
           refuteCalls += 1;
           return { refuted: true, reason: "unsupported" };
         }
+        if (prompt.includes('"sourceLedger"')) {
+          return {
+            answer: "no supported claims",
+            sourceLedger: [],
+            claimLedger: [],
+            contradictionChecks: [{ claim: "a claim", result: "unsupported" }],
+            claimConfidenceTable: [],
+            rejectedClaims: [{ claim: "a claim", reason: "unsupported" }],
+          };
+        }
         return "final report text";
       },
     });
@@ -93,7 +198,49 @@ describe("workflow command service", () => {
     // The single deduped claim was refuted by the panel, so nothing is confirmed.
     expect(result.confirmedClaims).toEqual([]);
     expect(refuteCalls).toBeGreaterThanOrEqual(3); // a 3-reviewer panel ran
-    expect(result.report).toBe("final report text");
+    expect(result.report).toEqual(expect.objectContaining({
+      sourceLedger: [],
+      claimConfidenceTable: [],
+      rejectedClaims: [{ claim: "a claim", reason: "unsupported" }],
+    }));
+  });
+
+  test("generated deep-research report includes a source ledger and claim confidence table", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-deep-research-report-"));
+    roots.push(projectRoot);
+    const service = createWorkflowCommandService({
+      projectRoot,
+      agent: async (prompt) => {
+        if (prompt.includes('"angles"')) return { angles: ["technical"] };
+        if (prompt.includes('"claims"')) return { claims: [{ claim: "workflow parity needs evidence ledgers", source: "source-1" }] };
+        if (prompt.includes("REFUTE")) return { refuted: false, reason: "supported" };
+        if (prompt.includes('"sourceLedger"')) {
+          return {
+            answer: "Workflow parity needs evidence ledgers [source-1].",
+            sourceLedger: [{ source: "source-1", claims: ["workflow parity needs evidence ledgers"] }],
+            claimLedger: [{ claim: "workflow parity needs evidence ledgers", source: "source-1", status: "confirmed" }],
+            contradictionChecks: [{ claim: "workflow parity needs evidence ledgers", result: "not contradicted" }],
+            claimConfidenceTable: [{ claim: "workflow parity needs evidence ledgers", confidence: "high", source: "source-1" }],
+            rejectedClaims: [],
+          };
+        }
+        return {};
+      },
+    });
+
+    const research = await service.runDeepResearch("workflow parity evidence");
+    const result = research.result as { report: { sourceLedger: unknown[]; claimConfidenceTable: unknown[] } };
+
+    expect(research.status).toBe("completed");
+    expect(result.report.sourceLedger).toContainEqual(expect.objectContaining({
+      source: "source-1",
+      claims: ["workflow parity needs evidence ledgers"],
+    }));
+    expect(result.report.claimConfidenceTable).toContainEqual(expect.objectContaining({
+      claim: "workflow parity needs evidence ledgers",
+      confidence: "high",
+      source: "source-1",
+    }));
   });
 
   test("generated deep-research loops past the first round while fresh claims keep arriving (loop-until-dry)", async () => {
@@ -115,6 +262,16 @@ describe("workflow command service", () => {
           return { claims: [{ claim: "claim-" + gatherCalls, source: "s" }] };
         }
         if (prompt.includes("REFUTE")) return { refuted: true, reason: "x" };
+        if (prompt.includes('"sourceLedger"')) {
+          return {
+            answer: "report",
+            sourceLedger: [],
+            claimLedger: [],
+            contradictionChecks: [],
+            claimConfidenceTable: [],
+            rejectedClaims: [],
+          };
+        }
         return "report";
       },
     });
@@ -165,6 +322,94 @@ describe("workflow command service", () => {
       name: "no-write-probe",
       status: "failed",
       error: "Dynamic workflow execution denied by permission policy",
+    }));
+  });
+
+  test("passes workflow preview metadata to permission policy before execution", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-permission-preview-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    const scriptPath = join(workflowsRoot, "preview-probe.js");
+    writeFileSync(scriptPath, "export default async function () { return { ok: true }; }\n");
+    let preview: unknown;
+    const service = createWorkflowCommandService({
+      projectRoot,
+      permissionPolicy: {
+        authorizeDynamicWorkflow(request) {
+          preview = request;
+          return { allowed: true };
+        },
+      },
+    });
+    const args = ["alpha", { limit: 2 }];
+
+    const run = await service.runSavedWorkflow("preview-probe", args);
+
+    expect(run.status).toBe("completed");
+    expect(preview).toEqual(expect.objectContaining({
+      name: "preview-probe",
+      scriptPath,
+      args,
+      argsPreview: "[\"alpha\",{\"limit\":2}]",
+    }));
+  });
+
+  test("passes source origin, agent estimate, and worktree hints to permission policy", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-permission-preview-"));
+    roots.push(projectRoot);
+    let preview: unknown;
+    const service = createWorkflowCommandService({
+      projectRoot,
+      permissionPolicy: {
+        authorizeDynamicWorkflow(request) {
+          preview = request;
+          return { allowed: true };
+        },
+      },
+    });
+
+    await service.runWorkflow({
+      name: "preview-source",
+      script: `
+export default async function ({ agent }) {
+  await agent("inspect", { isolation: "worktree" });
+  return agent("summarize");
+}
+`,
+    });
+
+    expect(preview).toEqual(expect.objectContaining({
+      name: "preview-source",
+      origin: "source",
+      generated: false,
+      agentCountEstimate: 2,
+      isolationHints: ["worktree"],
+      writeHints: ["worktree"],
+    }));
+  });
+
+  test("marks generated ad hoc workflows in permission preview metadata", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-permission-preview-"));
+    roots.push(projectRoot);
+    let preview: unknown;
+    const service = createWorkflowCommandService({
+      projectRoot,
+      permissionPolicy: {
+        authorizeDynamicWorkflow(request) {
+          preview = request;
+          return { allowed: true };
+        },
+      },
+    });
+
+    await service.runAdHocWorkflow("inspect generated preview");
+
+    expect(preview).toEqual(expect.objectContaining({
+      name: "inspect-generated-preview",
+      origin: "saved",
+      generated: true,
+      agentCountEstimate: expect.any(Number),
     }));
   });
 

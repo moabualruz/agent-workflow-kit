@@ -6,6 +6,7 @@ import { createContext, Script } from "node:vm";
 import type { WorkflowArgs, WorkflowInvocation, WorkflowScript } from "./domain";
 import type { ResolvedWorkflowInvocation } from "./runtime";
 import { parseWorkflowMeta, phaseModelMap } from "./workflow-meta";
+import { saveWorkflowSource } from "./workflow-authoring";
 
 export type WorkflowScope = "project" | "personal";
 
@@ -23,6 +24,10 @@ export type ResolvedWorkflowScript = {
   // Absolute path the script was loaded from (absent for built-ins). Recorded on
   // the run so resume can re-resolve by path, not just by name.
   path?: string;
+  origin?: "saved" | "path" | "built-in";
+  agentCountEstimate?: number;
+  isolationHints?: string[];
+  writeHints?: string[];
 };
 
 export type WorkflowLookupOptions = {
@@ -69,6 +74,7 @@ export async function resolveWorkflow(
       name: workflowNameFromPath(directPath),
       ...(await loadWorkflowScript(directPath)),
       path: directPath,
+      origin: "path",
     };
   }
 
@@ -79,11 +85,12 @@ export async function resolveWorkflow(
       name: workflowRef,
       ...(await loadWorkflowScript(workflowPath)),
       path: workflowPath,
+      origin: "saved",
     };
   }
 
   const builtIn = builtInWorkflows.get(workflowRef);
-  if (builtIn) return { name: workflowRef, script: builtIn };
+  if (builtIn) return { name: workflowRef, script: builtIn, origin: "built-in" };
 
   throw new Error(`Unknown workflow: ${workflowRef}`);
 }
@@ -94,10 +101,24 @@ export async function resolveWorkflowInvocation(
   args?: WorkflowArgs,
   options: WorkflowLookupOptions = {},
 ): Promise<ResolvedWorkflowInvocation> {
-  if (request.script) {
+  if (typeof request.script === "string") {
+    const saved = saveWorkflowSource(projectRoot, request.name, request.script);
+    return {
+      name: saved.name,
+      ...(await loadWorkflowScript(saved.path)),
+      path: saved.path,
+      origin: "source",
+      generated: request.generated === true,
+      ...previewMetadataForSource(request.script),
+      args: args ?? request.args,
+    };
+  }
+
+  if (typeof request.script === "function") {
     return {
       name: request.name ?? "workflow",
       script: request.script,
+      generated: request.generated === true,
       args: args ?? request.args,
     };
   }
@@ -108,6 +129,9 @@ export async function resolveWorkflowInvocation(
     return {
       name: workflowNameFromPath(directPath),
       ...(await loadWorkflowScript(directPath)),
+      path: directPath,
+      origin: "path",
+      generated: request.generated === true,
       args: args ?? request.args,
     };
   }
@@ -116,6 +140,7 @@ export async function resolveWorkflowInvocation(
     const workflow = await resolveWorkflow(projectRoot, request.name, options);
     return {
       ...workflow,
+      generated: request.generated === true,
       args: args ?? request.args,
     };
   }
@@ -163,16 +188,24 @@ type LoadedWorkflow = {
   script: WorkflowScript;
   phaseModels?: Record<string, string>;
   runModel?: string;
+} & WorkflowPreviewMetadata;
+
+type WorkflowPreviewMetadata = {
+  agentCountEstimate: number;
+  isolationHints: string[];
+  writeHints: string[];
 };
 
 async function loadWorkflowScript(workflowPath: string): Promise<LoadedWorkflow> {
   const source = readFileSync(workflowPath, "utf8");
+  const preview = previewMetadataForSource(source);
   if (isClaudeStyleWorkflowSource(source)) {
     const parsed = parseWorkflowMeta(source);
     if (!parsed.ok) throw new Error(`Invalid workflow meta in ${workflowPath}: ${parsed.error}`);
     const models = phaseModelMap(parsed.meta);
     return {
       script: compileClaudeStyleWorkflowScript(source, workflowPath),
+      ...preview,
       ...(models.size ? { phaseModels: Object.fromEntries(models) } : {}),
       ...(parsed.meta.model ? { runModel: parsed.meta.model } : {}),
     };
@@ -181,7 +214,18 @@ async function loadWorkflowScript(workflowPath: string): Promise<LoadedWorkflow>
   const module = await import(pathToFileURL(workflowPath).href);
   const script = module.default ?? module.workflow;
   if (typeof script !== "function") throw new Error(`Saved workflow must export a function: ${workflowPath}`);
-  return { script: script as WorkflowScript };
+  return { script: script as WorkflowScript, ...preview };
+}
+
+function previewMetadataForSource(source: string): WorkflowPreviewMetadata {
+  const agentCountEstimate = source.match(/\bagent\s*\(/g)?.length ?? 0;
+  const isolationHints = /\bisolation\s*:\s*["']worktree["']/.test(source) ? ["worktree"] : [];
+  const writeHints = isolationHints.includes("worktree") ? ["worktree"] : [];
+  return {
+    agentCountEstimate,
+    isolationHints,
+    writeHints,
+  };
 }
 
 function isClaudeStyleWorkflowSource(source: string): boolean {

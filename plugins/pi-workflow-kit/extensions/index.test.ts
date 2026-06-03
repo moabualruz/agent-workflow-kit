@@ -10,7 +10,16 @@ describe("pi workflow kit extension", () => {
       type: "object",
       properties: expect.objectContaining({
         workflow: { type: "string" },
-        args: { type: "object", additionalProperties: true },
+        args: {
+          anyOf: [
+            { type: "object", additionalProperties: true },
+            { type: "array" },
+            { type: "string" },
+            { type: "number" },
+            { type: "boolean" },
+            { type: "null" },
+          ],
+        },
       }),
       required: ["workflow"],
     }));

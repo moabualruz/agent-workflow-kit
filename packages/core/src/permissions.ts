@@ -1,5 +1,19 @@
+import type { WorkflowArgs } from "./domain";
+
+export type WorkflowPermissionRequest = {
+  name: string;
+  scriptPath?: string | undefined;
+  args?: WorkflowArgs | undefined;
+  argsPreview: string;
+  origin?: "saved" | "source" | "path" | "built-in" | undefined;
+  generated: boolean;
+  agentCountEstimate?: number | undefined;
+  isolationHints: string[];
+  writeHints: string[];
+};
+
 export type PermissionPolicy = {
-  authorizeDynamicWorkflow: (request: { name: string }) => Promise<PermissionDecision> | PermissionDecision;
+  authorizeDynamicWorkflow: (request: WorkflowPermissionRequest) => Promise<PermissionDecision> | PermissionDecision;
 };
 
 export type PermissionDecision =

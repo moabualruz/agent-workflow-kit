@@ -30,6 +30,21 @@ export function saveGeneratedWorkflow(
   return { name, path: workflowPath };
 }
 
+export function saveWorkflowSource(
+  projectRoot: string,
+  name: string | undefined,
+  source: string,
+): GeneratedWorkflow {
+  const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+  mkdirSync(workflowsRoot, { recursive: true });
+
+  const baseName = workflowNameForTask(name ?? "workflow");
+  const workflowName = collisionSafeName(workflowsRoot, baseName, source, source, "task");
+  const workflowPath = join(workflowsRoot, `${workflowName}.js`);
+  writeFileSync(workflowPath, source);
+  return { name: workflowName, path: workflowPath };
+}
+
 function collisionSafeName(
   workflowsRoot: string,
   baseName: string,
@@ -138,6 +153,18 @@ const question = ${JSON.stringify(question)};
 const ANGLES_SCHEMA = { type: "object", required: ["angles"], properties: { angles: { type: "array", items: { type: "string" } } } };
 const CLAIMS_SCHEMA = { type: "object", required: ["claims"], properties: { claims: { type: "array", items: { type: "object", required: ["claim"], properties: { claim: { type: "string" }, source: { type: "string" } } } } } };
 const VERDICT_SCHEMA = { type: "object", required: ["refuted"], properties: { refuted: { type: "boolean" }, reason: { type: "string" } } };
+const REPORT_SCHEMA = {
+  type: "object",
+  required: ["answer", "sourceLedger", "claimLedger", "contradictionChecks", "claimConfidenceTable", "rejectedClaims"],
+  properties: {
+    answer: { type: "string" },
+    sourceLedger: { type: "array", items: { type: "object", required: ["source", "claims"], properties: { source: { type: "string" }, claims: { type: "array", items: { type: "string" } } } } },
+    claimLedger: { type: "array", items: { type: "object", required: ["claim", "source", "status"], properties: { claim: { type: "string" }, source: { type: "string" }, status: { type: "string" } } } },
+    contradictionChecks: { type: "array", items: { type: "object", required: ["claim", "result"], properties: { claim: { type: "string" }, result: { type: "string" } } } },
+    claimConfidenceTable: { type: "array", items: { type: "object", required: ["claim", "confidence", "source"], properties: { claim: { type: "string" }, confidence: { type: "string" }, source: { type: "string" } } } },
+    rejectedClaims: { type: "array", items: { type: "object", required: ["claim", "reason"], properties: { claim: { type: "string" }, source: { type: "string" }, reason: { type: "string" } } } }
+  }
+};
 const MAX_ROUNDS = 5;
 const DRY_ROUNDS = 2;
 const REFUTERS = 3;
@@ -149,6 +176,7 @@ const anglesResult = await agent('List 2-4 distinct research angles for: ' + top
 const angles = (anglesResult && Array.isArray(anglesResult.angles) ? anglesResult.angles : []).filter(Boolean);
 
 const confirmed = [];
+const rejected = [];
 const seen = new Set();
 let round = 0;
 let dry = 0;
@@ -177,16 +205,35 @@ while (round < MAX_ROUNDS && dry < DRY_ROUNDS) {
           agent('Try to REFUTE this claim about "' + topic + '". Default refuted=true if unsure.\\nClaim: ' + c.claim + '\\nSource: ' + (c.source || "n/a") + ' (reviewer ' + (i + 1) + ')', { schema: VERDICT_SCHEMA }))
       ).then((votes) => {
         seen.add(c.claim);
-        const refutes = votes.filter(Boolean).filter((v) => v.refuted).length;
-        return { claim: c, survives: refutes < Math.ceil(REFUTERS / 2) };
+        const refutingVotes = votes.filter(Boolean).filter((v) => v.refuted);
+        const refutes = refutingVotes.length;
+        const confidence = refutes === 0 ? "high" : "medium";
+        const reason = refutingVotes.find((v) => v.reason)?.reason || "refuted by reviewer panel";
+        return { claim: c, survives: refutes < Math.ceil(REFUTERS / 2), confidence, reason };
       }))
   );
-  confirmed.push(...judged.filter(Boolean).filter((j) => j.survives).map((j) => j.claim));
+  confirmed.push(...judged.filter(Boolean).filter((j) => j.survives).map((j) => ({ ...j.claim, confidence: j.confidence })));
+  rejected.push(...judged.filter(Boolean).filter((j) => !j.survives).map((j) => ({ claim: j.claim.claim, source: j.claim.source || "n/a", reason: j.reason })));
 }
 
 phase("Synthesize");
-const report = await agent('Write a cited answer to "' + topic + '" using only these verified claims:\\n' + JSON.stringify(confirmed));
+const sourceLedger = confirmed.map((c) => ({ source: c.source || "n/a", claims: [c.claim] }));
+const claimLedger = confirmed.map((c) => ({ claim: c.claim, source: c.source || "n/a", status: "confirmed" }));
+const contradictionChecks = rejected.map((c) => ({ claim: c.claim, result: c.reason || "rejected" }));
+const claimConfidenceTable = confirmed.map((c) => ({ claim: c.claim, confidence: c.confidence || "medium", source: c.source || "n/a" }));
+const reportDraft = await agent(
+  'Write a cited answer to "' + topic + '" using only verified claims. Omit or explicitly mark rejected/unsupported claims. Return JSON {"answer","sourceLedger","claimLedger","contradictionChecks","claimConfidenceTable","rejectedClaims"}.\\nVerified claims:\\n' + JSON.stringify(confirmed) + '\\nRejected claims:\\n' + JSON.stringify(rejected),
+  { schema: REPORT_SCHEMA }
+);
+const report = {
+  ...reportDraft,
+  sourceLedger: reportDraft && Array.isArray(reportDraft.sourceLedger) && reportDraft.sourceLedger.length ? reportDraft.sourceLedger : sourceLedger,
+  claimLedger: reportDraft && Array.isArray(reportDraft.claimLedger) && reportDraft.claimLedger.length ? reportDraft.claimLedger : claimLedger,
+  contradictionChecks: reportDraft && Array.isArray(reportDraft.contradictionChecks) && reportDraft.contradictionChecks.length ? reportDraft.contradictionChecks : contradictionChecks,
+  claimConfidenceTable: reportDraft && Array.isArray(reportDraft.claimConfidenceTable) && reportDraft.claimConfidenceTable.length ? reportDraft.claimConfidenceTable : claimConfidenceTable,
+  rejectedClaims: reportDraft && Array.isArray(reportDraft.rejectedClaims) && reportDraft.rejectedClaims.length ? reportDraft.rejectedClaims : rejected
+};
 
-return { ok: true, question: topic, angles, confirmedClaims: confirmed, report, rounds: round };
+return { ok: true, question: topic, angles, confirmedClaims: confirmed, rejectedClaims: rejected, report, rounds: round };
 `;
 }

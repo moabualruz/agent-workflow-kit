@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileStore, createWorkflowRuntime, type WorkflowScript } from "../src/index";
@@ -35,6 +35,7 @@ describe("file workflow store", () => {
         root: runDir,
         runJson: join(runDir, "run.json"),
         eventsJsonl: join(runDir, "events.jsonl"),
+        transcriptDir: join(runDir, "transcripts"),
       },
       result: { ok: true },
     }));
@@ -44,9 +45,11 @@ describe("file workflow store", () => {
       root: runDir,
       runJson: join(runDir, "run.json"),
       eventsJsonl: join(runDir, "events.jsonl"),
+      transcriptDir: join(runDir, "transcripts"),
     });
     expect(existsSync(artifacts.runJson)).toBe(true);
     expect(existsSync(artifacts.eventsJsonl)).toBe(true);
+    expect(existsSync(artifacts.transcriptDir)).toBe(true);
     const events = readFileSync(join(runDir, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(events.map((event) => event.type)).toEqual([
       "run:started",
@@ -55,6 +58,53 @@ describe("file workflow store", () => {
       "agent:done",
       "run:completed",
     ]);
+  });
+
+  test("writes structured transcript files for live agent calls", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-store-"));
+    roots.push(projectRoot);
+    const store = createFileStore({ projectRoot });
+    const runtime = createWorkflowRuntime({
+      store,
+      sessionModel: "harness/default",
+      estimateTokens: () => 7,
+      agent: async (prompt, options) => ({
+        prompt,
+        model: options?.model,
+      }),
+    });
+    const script: WorkflowScript = async ({ phase, agent }) => {
+      phase("Inspect");
+      return agent("inspect current state", { label: "inspector" });
+    };
+
+    const run = await runtime.run({ name: "transcript-probe", script });
+
+    const artifacts = run.artifacts;
+    if (!artifacts) throw new Error("expected file-backed run artifacts");
+    const files = readdirSync(artifacts.transcriptDir).filter((file) => file.endsWith(".json"));
+    expect(files).toHaveLength(1);
+    const transcript = JSON.parse(readFileSync(join(artifacts.transcriptDir, files[0]!), "utf8"));
+    expect(transcript).toEqual(expect.objectContaining({
+      runId: run.runId,
+      key: "root#1",
+      seq: 1,
+      index: 1,
+      status: "completed",
+      prompt: "inspect current state",
+      label: "inspector",
+      group: "Inspect",
+      model: "harness/default",
+      result: {
+        prompt: "inspect current state",
+        model: "harness/default",
+      },
+      tokens: 7,
+    }));
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "agent:done",
+      transcriptPath: join(artifacts.transcriptDir, files[0]!),
+    }));
   });
 
   test("lists and loads persisted runs", async () => {

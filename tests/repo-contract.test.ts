@@ -182,6 +182,15 @@ describe("standalone repository contract", () => {
     }
   });
 
+  test("Ultracode guidance separates standing opt-in, keyword trigger, and model effort", () => {
+    const canonical = normalizedUltracodeBlock(readFileSync(join(repoRoot, "docs/ultracode.md"), "utf8"));
+
+    expect(canonical).toContain("standing opt-in");
+    expect(canonical).toContain("keyword trigger");
+    expect(canonical).toContain("model effort");
+    expect(canonical).toContain("orchestration-only");
+  });
+
   test("ignores Claude runtime locks without hiding project workflows", () => {
     const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
     const ignoredLines = gitignore.split(/\r?\n/).map((line) => line.trim());

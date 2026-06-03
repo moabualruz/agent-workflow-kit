@@ -97,6 +97,92 @@ describe("workflow runtime parity contract", () => {
     expect(calls).toBe(50);
   });
 
+  test("explicit max agent call limit fails before the adapter exceeds policy", async () => {
+    const store = createMemoryStore();
+    let calls = 0;
+    const runtime = createWorkflowRuntime({
+      store,
+      executionLimits: { maxAgentCalls: 2 },
+      agent: async (prompt) => {
+        calls += 1;
+        return { prompt };
+      },
+    });
+
+    const script: WorkflowScript = async ({ agent }) => {
+      await agent("first");
+      await agent("second");
+      return agent("third");
+    };
+
+    const run = await runtime.run({ name: "agent-limit", script });
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("Agent call limit exceeded");
+    expect(calls).toBe(2);
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "agent:limit",
+      prompt: "third",
+      error: "Agent call limit exceeded: maxAgentCalls=2",
+    }));
+  });
+
+  test("explicit estimated token limit can stop the run after budget spend exceeds policy", async () => {
+    const store = createMemoryStore();
+    let calls = 0;
+    const runtime = createWorkflowRuntime({
+      store,
+      executionLimits: { maxEstimatedTokens: 10, stopOnEstimatedTokenLimit: true },
+      estimateTokens: () => 8,
+      agent: async (prompt) => {
+        calls += 1;
+        return { prompt };
+      },
+    });
+
+    const script: WorkflowScript = async ({ agent }) => {
+      await agent("first");
+      return agent("second");
+    };
+
+    const run = await runtime.run({ name: "token-limit", script });
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("Estimated token limit exceeded");
+    expect(calls).toBe(2);
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "agent:limit",
+      prompt: "second",
+      error: "Estimated token limit exceeded: maxEstimatedTokens=10",
+    }));
+  });
+
+  test("explicit child workflow depth limit can block child workflow execution", async () => {
+    const store = createMemoryStore();
+    let childAgentCalls = 0;
+    const runtime = createWorkflowRuntime({
+      store,
+      executionLimits: { maxChildWorkflowDepth: 0 },
+      agent: async () => {
+        childAgentCalls += 1;
+        return { ok: true };
+      },
+    });
+    const child: WorkflowScript = async ({ agent }) => agent("child work");
+    const parent: WorkflowScript = async ({ workflow }) => workflow({ name: "child", script: child });
+
+    const run = await runtime.run({ name: "depth-limit", script: parent });
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("Child workflow depth limit exceeded");
+    expect(childAgentCalls).toBe(0);
+    expect(store.eventsFor(run.runId)).toContainEqual(expect.objectContaining({
+      type: "workflow:limit",
+      title: "child",
+      error: "Child workflow depth limit exceeded: maxChildWorkflowDepth=0",
+    }));
+  });
+
   test("pipeline starts each stage after prior stage completion and returns final stage result", async () => {
     const store = createMemoryStore();
     const runtime = createWorkflowRuntime({
@@ -151,14 +237,17 @@ describe("workflow runtime parity contract", () => {
     const runtime = createWorkflowRuntime({ store, agent: async () => ({}) });
 
     const child: WorkflowScript = async ({ args }) => ({ child: args });
-    const parent: WorkflowScript = async ({ args, workflow }) => ({
-      parent: args,
-      nested: await workflow({
-        name: "child-with-args",
-        script: child,
-        args: { childId: args.parentId },
-      }),
-    });
+    const parent: WorkflowScript = async ({ args, workflow }) => {
+      const parentArgs = args as { parentId: string };
+      return {
+        parent: args,
+        nested: await workflow({
+          name: "child-with-args",
+          script: child,
+          args: { childId: parentArgs.parentId },
+        }),
+      };
+    };
 
     const run = await runtime.run({
       name: "parent-with-args",

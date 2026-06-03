@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { setUltracode } from "./config";
-import type { AgentFunction, WorkflowArgs, WorkflowRun, WorkflowStore } from "./domain";
+import { setUltracode, workflowDisableReason, type WorkflowDisableControls } from "./config";
+import type { AgentFunction, WorkflowArgs, WorkflowLaunchInput, WorkflowLaunchOutput, WorkflowRun, WorkflowStore } from "./domain";
 import { requireText } from "./errors";
+import type { AgentExecutionLimits } from "./execution-limits";
 import type { ModelPolicy } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
+import { projectWorkflowProgress } from "./progress";
 import { createWorkflowRuntime } from "./runtime";
 import { resolveWorkflow, resolveWorkflowInvocation } from "./saved-workflows";
 import { schemaDefaultAgent } from "./schema-default-agent";
@@ -17,10 +19,13 @@ export type WorkflowCommandServiceOptions = {
   agent?: AgentFunction;
   modelPolicy?: ModelPolicy | undefined;
   permissionPolicy?: PermissionPolicy | undefined;
+  managedDisableWorkflows?: boolean | undefined;
+  sessionDisableWorkflows?: boolean | undefined;
   // Model used when an agent() call omits opts.model (inherited by the runtime).
   sessionModel?: string | undefined;
   // Informational output-token target readable via budget.* (not enforced).
   tokenBudget?: number | null | undefined;
+  executionLimits?: AgentExecutionLimits | undefined;
 };
 
 export type WorkflowCommandService = ReturnType<typeof createWorkflowCommandService>;
@@ -31,9 +36,10 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     store,
     agent: options.agent ?? schemaDefaultAgent,
     modelPolicy: options.modelPolicy,
-    permissionPolicy: options.permissionPolicy,
+    permissionPolicy: workflowPermissionPolicy(options.projectRoot, disableControlsFor(options), options.permissionPolicy),
     sessionModel: options.sessionModel,
     tokenBudget: options.tokenBudget,
+    executionLimits: options.executionLimits,
     resolveWorkflow: (request, args) => resolveWorkflowInvocation(options.projectRoot, request, args, {
       homeRoot: options.homeRoot,
     }),
@@ -47,6 +53,33 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     return run;
   };
 
+  const withProgress = (run: WorkflowRun): WorkflowRun => ({
+    ...run,
+    progress: projectWorkflowProgress(run, store.eventsFor(run.runId)),
+  });
+
+  const runWorkflow = async (input: WorkflowLaunchInput, runOpts: { detach?: boolean } = {}) => {
+    const workflow = await resolveWorkflowInvocation(options.projectRoot, input, undefined, {
+      homeRoot: options.homeRoot,
+    });
+    const request = {
+      name: workflow.name,
+      script: workflow.script,
+      ...(workflow.args !== undefined ? { args: workflow.args } : {}),
+      ...(workflow.phaseModels !== undefined ? { phaseModels: workflow.phaseModels } : {}),
+      ...(workflow.runModel !== undefined ? { runModel: workflow.runModel } : {}),
+      ...(workflow.path !== undefined ? { scriptPath: workflow.path } : {}),
+      ...(workflow.origin !== undefined ? { origin: workflow.origin } : {}),
+      ...(workflow.generated !== undefined ? { generated: workflow.generated } : {}),
+      ...(workflow.agentCountEstimate !== undefined ? { agentCountEstimate: workflow.agentCountEstimate } : {}),
+      ...(workflow.isolationHints !== undefined ? { isolationHints: workflow.isolationHints } : {}),
+      ...(workflow.writeHints !== undefined ? { writeHints: workflow.writeHints } : {}),
+    };
+    const runtimeOptions = input.resumeFromRunId ? { resumeFromRunId: input.resumeFromRunId } : {};
+    const run = runOpts.detach ? await runtime.runDetached(request, runtimeOptions) : await runtime.run(request, runtimeOptions);
+    return recordScriptHash(run, workflow.path);
+  };
+
   return {
     async runAdHocWorkflow(task: string) {
       const normalizedTask = requireText(task, "workflow requires task text");
@@ -56,28 +89,39 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
       const workflow = await resolveWorkflow(options.projectRoot, generated.name, {
         homeRoot: options.homeRoot,
       });
-      const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, args: { task: normalizedTask, workflow: generated } });
+      const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, generated: true, args: { task: normalizedTask, workflow: generated } });
       return recordScriptHash(run, workflow.path);
     },
 
-    async runSavedWorkflow(name: string, args: WorkflowArgs = {}, runOpts: { detach?: boolean } = {}) {
+    async runWorkflow(input: WorkflowLaunchInput, runOpts: { detach?: boolean } = {}) {
+      return runWorkflow(input, runOpts);
+    },
+
+    async runSavedWorkflow(name: string, args: WorkflowArgs = {}, runOpts: { detach?: boolean; resumeFromRunId?: string | undefined } = {}) {
       const workflowName = requireText(name, "workflow-run requires workflow name");
-      const workflow = await resolveWorkflow(options.projectRoot, workflowName, {
-        homeRoot: options.homeRoot,
-      });
-      const request = { ...workflow, args, scriptPath: workflow.path };
       // Detached: returns the "running" handle immediately; poll with
       // workflow-status / workflow-events for completion.
-      const run = runOpts.detach ? await runtime.runDetached(request) : await runtime.run(request);
-      return recordScriptHash(run, workflow.path);
+      return runWorkflow(
+        { name: workflowName, args, ...(runOpts.resumeFromRunId ? { resumeFromRunId: runOpts.resumeFromRunId } : {}) },
+        runOpts.detach ? { detach: true } : {},
+      );
+    },
+
+    async launchSavedWorkflow(name: string, args: WorkflowArgs = {}): Promise<WorkflowLaunchOutput> {
+      const workflowName = requireText(name, "workflow launch requires workflow name");
+      return launchOutputFor(await runWorkflow({ name: workflowName, args }, { detach: true }));
+    },
+
+    async launchWorkflow(input: WorkflowLaunchInput): Promise<WorkflowLaunchOutput> {
+      return launchOutputFor(await runWorkflow(input, { detach: true }));
     },
 
     getRun(runId: string) {
-      return store.getRun(requireText(runId, "workflow-status requires run id"));
+      return withProgress(store.getRun(requireText(runId, "workflow-status requires run id")));
     },
 
     listRuns() {
-      return store.listRuns();
+      return store.listRuns().map(withProgress);
     },
 
     eventsFor(runId: string) {
@@ -116,7 +160,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
 
         store.resume(id);
         const run = await runtime.run(
-          { ...workflow, args: prior.args ?? {}, scriptPath: workflow.path },
+          { ...workflow, args: prior.args === undefined ? {} : prior.args, scriptPath: workflow.path },
           { resumeFromRunId: id },
         );
         return recordScriptHash(run, workflow.path);
@@ -136,7 +180,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
       const workflow = await resolveWorkflow(options.projectRoot, generated.name, {
         homeRoot: options.homeRoot,
       });
-      const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, args: { question: normalizedQuestion, workflow: generated } });
+      const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, generated: true, args: { question: normalizedQuestion, workflow: generated } });
       return recordScriptHash(run, workflow.path);
     },
 
@@ -147,8 +191,46 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
       if (normalized !== "on" && normalized !== "off" && normalized !== "status") {
         throw new Error("ultracode requires one of: on, off, status");
       }
-      return setUltracode(options.projectRoot, normalized);
+      return setUltracode(options.projectRoot, normalized, disableControlsFor(options));
     },
+  };
+}
+
+function disableControlsFor(options: WorkflowCommandServiceOptions): WorkflowDisableControls {
+  return {
+    ...(options.managedDisableWorkflows !== undefined ? { managedDisableWorkflows: options.managedDisableWorkflows } : {}),
+    ...(options.homeRoot !== undefined ? { homeRoot: options.homeRoot } : {}),
+    ...(options.sessionDisableWorkflows !== undefined ? { sessionDisableWorkflows: options.sessionDisableWorkflows } : {}),
+  };
+}
+
+function workflowPermissionPolicy(
+  projectRoot: string,
+  controls: WorkflowDisableControls,
+  policy: PermissionPolicy | undefined,
+): PermissionPolicy {
+  return {
+    async authorizeDynamicWorkflow(request) {
+      const disabledBy = workflowDisableReason(projectRoot, controls);
+      if (disabledBy) {
+        return {
+          allowed: false,
+          reason: `Dynamic workflow execution disabled by ${disabledBy}`,
+        };
+      }
+      return policy?.authorizeDynamicWorkflow(request) ?? { allowed: true };
+    },
+  };
+}
+
+function launchOutputFor(run: WorkflowRun): WorkflowLaunchOutput {
+  return {
+    status: "async_launched",
+    taskId: `task_${run.runId}`,
+    runId: run.runId,
+    summary: `Started workflow ${run.name}`,
+    ...(run.artifacts?.transcriptDir ? { transcriptDir: run.artifacts.transcriptDir } : {}),
+    ...(run.scriptPath ? { scriptPath: run.scriptPath } : {}),
   };
 }
 

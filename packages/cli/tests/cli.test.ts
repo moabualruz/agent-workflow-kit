@@ -143,6 +143,78 @@ export default function ({ args }) {
     }));
   });
 
+  test("workflow-run forwards list args from --args-json to saved workflow files", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "list-args.js"), `
+export default function ({ args }) {
+  return { args };
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "list-args",
+      "--args-json",
+      "[\"1024\",\"1025\"]",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({
+      name: "list-args",
+      status: "completed",
+      result: { args: ["1024", "1025"] },
+    }));
+  });
+
+  test("workflow-run fails closed when environment disables workflows", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli([
+      "workflow-run",
+      "no-write-probe",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ], {
+      AGENT_WORKFLOW_KIT_DISABLE_WORKFLOWS: "1",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "failed",
+      error: "Dynamic workflow execution disabled by environment",
+    }));
+  });
+
+  test("workflow-run fails closed when the CLI session disables workflows", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli([
+      "workflow-run",
+      "no-write-probe",
+      "--disable-workflows",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "failed",
+      error: "Dynamic workflow execution disabled by session override",
+    }));
+  });
+
   test("workflow-run executes direct workflow script paths", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
@@ -178,7 +250,27 @@ export default function ({ phase, log }) {
     expect(JSON.parse(status.stdout)).toEqual(expect.objectContaining({
       runId: run.runId,
       status: "completed",
+      progress: expect.objectContaining({
+        runId: run.runId,
+        status: "completed",
+        agentTotal: 1,
+        agentDone: 1,
+        phases: [expect.objectContaining({ title: "Probe", agentTotal: 1, agentDone: 1 })],
+      }),
     }));
+  });
+
+  test("human workflow-status output surfaces progress and transcript location", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const status = await runCli(["workflow-status", run.runId, "--project-root", projectRoot]);
+
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout).toContain("progress: 1/1 agents done");
+    expect(status.stdout).toContain("transcripts:");
+    expect(status.stdout).toContain(join(projectRoot, ".agent-workflow-kit", "runs", run.runId, "transcripts"));
   });
 
   test("reads workflow events from persisted state", async () => {
@@ -265,6 +357,28 @@ export default function ({ phase }) {
     expect(resumedPayload.result).toEqual({ source: "outside" });
   });
 
+  test("workflow-run can resume through the same invocation surface with --resume-from-run-id", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const first = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const resumed = await runCli([
+      "workflow-run",
+      "no-write-probe",
+      "--resume-from-run-id",
+      first.runId,
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(resumed.exitCode).toBe(0);
+    const payload = JSON.parse(resumed.stdout);
+    expect(payload.status).toBe("completed");
+    expect(payload.runId).not.toBe(first.runId);
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("\"type\":\"agent:cached\"");
+  });
+
   test("permission-mode accepts the full mode enum and rejects unknown values", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
@@ -319,9 +433,11 @@ export default function ({ phase }) {
       root: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId),
       runJson: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "run.json"),
       eventsJsonl: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "events.jsonl"),
+      transcriptDir: join(projectRoot, ".agent-workflow-kit", "runs", payload.runId, "transcripts"),
     });
     expect(existsSync(payload.artifacts.runJson)).toBe(true);
     expect(existsSync(payload.artifacts.eventsJsonl)).toBe(true);
+    expect(existsSync(payload.artifacts.transcriptDir)).toBe(true);
     expect(payload.result).toEqual(expect.objectContaining({ ok: true, question: "compare workflow harnesses" }));
   });
 
@@ -396,6 +512,78 @@ export default async function ({ budget }) {
 
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout).result).toEqual({ total: 5000 });
+  });
+
+  test("--max-agent-calls applies an explicit runtime limit", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "limit-probe.js"), `
+export default async function ({ agent }) {
+  await agent("first");
+  return agent("second");
+}
+`);
+
+    const result = await runCli(["workflow-run", "limit-probe", "--max-agent-calls", "1", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.status).toBe("failed");
+    expect(payload.error).toContain("Agent call limit exceeded");
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("\"type\":\"agent:limit\"");
+  });
+
+  test("--max-estimated-tokens can stop a workflow when token estimates exceed policy", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+
+    const result = await runCli([
+      "workflow-run",
+      "no-write-probe",
+      "--max-estimated-tokens",
+      "1",
+      "--stop-on-estimated-token-limit",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.status).toBe("failed");
+    expect(payload.error).toContain("Estimated token limit exceeded");
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("\"type\":\"agent:limit\"");
+  });
+
+  test("--max-child-workflow-depth can block child workflow execution", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "child-depth-probe.js"), `
+export default async function ({ workflow }) {
+  const child = async ({ agent }) => agent("child");
+  return workflow({ name: "child", script: child });
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "child-depth-probe",
+      "--max-child-workflow-depth",
+      "0",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.status).toBe("failed");
+    expect(payload.error).toContain("Child workflow depth limit exceeded");
+    expect(readFileSync(payload.artifacts.eventsJsonl, "utf8")).toContain("\"type\":\"workflow:limit\"");
   });
 
   test("--session-model is inherited by agent() calls that omit a model", async () => {

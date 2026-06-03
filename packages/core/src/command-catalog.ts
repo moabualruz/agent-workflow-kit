@@ -2,9 +2,9 @@ import type { WorkflowCommandService } from "./command-service";
 import type { WorkflowArgs } from "./domain";
 import { requireInputText } from "./errors";
 
-export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question" | "action";
+export type WorkflowCommandInputKey = "task" | "workflow" | "runId" | "question" | "action" | "resumeFromRunId";
 export type WorkflowCommandArgumentMode = "first" | "join";
-export type WorkflowCommandToolInputKind = "string" | "object" | "boolean";
+export type WorkflowCommandToolInputKind = "string" | "json" | "boolean";
 
 export type WorkflowCommandToolInput = {
   name: "projectRoot" | WorkflowCommandInputKey | "args" | "detach";
@@ -53,7 +53,10 @@ export const workflowCommandCatalog: readonly WorkflowCommandSpec[] = [
     dispatch: (service, input) => service.runSavedWorkflow(
       requireInputText(input.workflow, "workflow-run requires workflow"),
       readWorkflowArgs(input.args),
-      { detach: input.detach === true },
+      {
+        detach: input.detach === true,
+        resumeFromRunId: readOptionalText(input.resumeFromRunId, "workflow-run resumeFromRunId must be a string"),
+      },
     ),
   },
   {
@@ -166,7 +169,8 @@ export function workflowCommandToolInputs(command: WorkflowCatalogEntry): Workfl
     { name: "projectRoot", kind: "string", required: false },
   ];
   if (command.inputKey) inputs.push({ name: command.inputKey, kind: "string", required: !command.inputOptional });
-  if (command.acceptsArgs) inputs.push({ name: "args", kind: "object", required: false });
+  if (command.acceptsArgs) inputs.push({ name: "args", kind: "json", required: false });
+  if (command.name === "workflow-run") inputs.push({ name: "resumeFromRunId", kind: "string", required: false });
   if (command.supportsDetach) inputs.push({ name: "detach", kind: "boolean", required: false });
   return inputs;
 }
@@ -189,17 +193,45 @@ export function workflowCommandToolInputSchema(command: WorkflowCatalogEntry) {
 }
 
 function jsonSchemaFor(kind: WorkflowCommandToolInputKind) {
-  if (kind === "object") return { type: "object", additionalProperties: true };
+  if (kind === "json") {
+    return {
+      anyOf: [
+        { type: "object", additionalProperties: true },
+        { type: "array" },
+        { type: "string" },
+        { type: "number" },
+        { type: "boolean" },
+        { type: "null" },
+      ],
+    };
+  }
   if (kind === "boolean") return { type: "boolean" };
   return { type: "string" };
 }
 
 function readWorkflowArgs(value: unknown): WorkflowArgs {
   if (value === undefined) return {};
-  if (isPlainRecord(value)) return value;
-  throw new Error("workflow-run args must be a JSON object");
+  if (isJsonValue(value)) return value;
+  throw new Error("workflow-run args must be JSON data");
 }
 
-function isPlainRecord(value: unknown): value is WorkflowArgs {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function readOptionalText(value: unknown, message: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  throw new Error(message);
+}
+
+function isJsonValue(value: unknown): value is WorkflowArgs {
+  if (value === null) return true;
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (!isPlainRecord(value)) return false;
+  return Object.values(value).every(isJsonValue);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }

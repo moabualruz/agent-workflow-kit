@@ -6,6 +6,7 @@ export type WorkflowRun = {
   status: RunStatus;
   artifacts?: WorkflowArtifacts;
   args?: WorkflowArgs;
+  progress?: WorkflowProgress;
   // Absolute path the workflow was loaded from, when known. Lets resume
   // re-resolve by path instead of re-deriving from the name.
   scriptPath?: string;
@@ -17,11 +18,13 @@ export type WorkflowArtifacts = {
   root: string;
   runJson: string;
   eventsJsonl: string;
+  transcriptDir: string;
 };
 
 export type WorkflowEvent = {
   runId: string;
   type: string;
+  timestamp?: string;
   index?: number;
   // Stable replay key: "<scopePath>#<ordinal>", assigned at the synchronous
   // agent() call site so it is identical across runs regardless of completion
@@ -44,6 +47,7 @@ export type WorkflowEvent = {
   tokens?: number;
   error?: string;
   message?: string;
+  transcriptPath?: string;
 };
 
 export type AgentFunction = (prompt: string, options?: AgentOptions) => Promise<unknown>;
@@ -65,9 +69,62 @@ export type AgentOptions = {
   phase?: string;
 };
 
-export type WorkflowArgs = Record<string, unknown>;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type WorkflowArgs = JsonValue;
+export type WorkflowLaunchStatus = "async_launched" | "remote_launched";
+
+export type WorkflowLaunchOutput = {
+  status: WorkflowLaunchStatus;
+  taskId: string;
+  runId?: string | undefined;
+  summary?: string | undefined;
+  transcriptDir?: string | undefined;
+  scriptPath?: string | undefined;
+  sessionUrl?: string | undefined;
+  warning?: string | undefined;
+};
+
+export type WorkflowPhaseProgress = {
+  title: string;
+  kind?: string | undefined;
+  agentTotal: number;
+  agentDone: number;
+  agentRunning: number;
+  agentFailed: number;
+  agentCached: number;
+  tokenTotal: number;
+};
+
+export type WorkflowRunningAgentProgress = {
+  key: string;
+  index?: number | undefined;
+  phase?: string | undefined;
+  label?: string | undefined;
+  agentType?: string | undefined;
+  prompt?: string | undefined;
+  elapsedMs: number;
+};
+
+export type WorkflowProgress = {
+  runId: string;
+  name: string;
+  status: RunStatus;
+  elapsedMs: number;
+  agentTotal: number;
+  agentDone: number;
+  agentRunning: number;
+  agentFailed: number;
+  agentCached: number;
+  tokenTotal: number;
+  phases: WorkflowPhaseProgress[];
+  warnings: string[];
+  recentEvents: WorkflowEvent[];
+  longestRunningAgent?: WorkflowRunningAgentProgress | undefined;
+};
 
 export type WorkflowScript = (context: WorkflowContext) => unknown | Promise<unknown>;
+export type WorkflowSource = WorkflowScript | string;
 
 export type WorkflowBudget = {
   total: number | null;
@@ -91,9 +148,14 @@ export type WorkflowContext = {
 
 export type WorkflowInvocation = {
   name?: string;
-  script?: WorkflowScript;
+  script?: WorkflowSource;
   scriptPath?: string;
   args?: WorkflowArgs | undefined;
+  generated?: boolean | undefined;
+};
+
+export type WorkflowLaunchInput = WorkflowInvocation & {
+  resumeFromRunId?: string | undefined;
 };
 
 export type RunRequest = {
@@ -105,6 +167,11 @@ export type RunRequest = {
   runModel?: string;
   // Absolute path the workflow was loaded from, recorded on the run for resume.
   scriptPath?: string | undefined;
+  origin?: "saved" | "source" | "path" | "built-in" | undefined;
+  generated?: boolean | undefined;
+  agentCountEstimate?: number | undefined;
+  isolationHints?: string[] | undefined;
+  writeHints?: string[] | undefined;
 };
 
 export type AgentJournalEntry = {
@@ -117,6 +184,24 @@ export type AgentJournalEntry = {
   result: unknown;
   // Output-token estimate the original generation cost, re-applied to budget on
   // a resume cache hit so spent()/remaining() stay replay-stable.
+  tokens?: number | undefined;
+};
+
+export type AgentTranscript = {
+  runId: string;
+  key: string;
+  seq: number;
+  index: number;
+  status: "completed" | "failed" | "cached";
+  timestamp?: string;
+  prompt: string;
+  label?: string | undefined;
+  group?: string | undefined;
+  agentType?: string | undefined;
+  model?: string | undefined;
+  requestedModel?: string | undefined;
+  result?: unknown;
+  error?: string | undefined;
   tokens?: number | undefined;
 };
 
@@ -133,4 +218,5 @@ export type WorkflowStore = {
   registerAbort?: (runId: string) => AbortSignal;
   clearAbort?: (runId: string) => void;
   agentJournal?: (runId: string) => AgentJournalEntry[];
+  writeAgentTranscript?: (entry: AgentTranscript) => string;
 };

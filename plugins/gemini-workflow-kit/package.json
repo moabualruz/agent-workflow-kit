@@ -1,6 +1,6 @@
 {
   "name": "gemini-workflow-kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Gemini CLI extension package for Agent Workflow Kit commands.",
   "type": "module",
   "private": true

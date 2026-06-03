@@ -1,6 +1,6 @@
-import type { AgentJournalEntry, AgentOptions, RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowInvocation, WorkflowRun, WorkflowScript, WorkflowStore } from "./domain";
+import type { AgentJournalEntry, AgentOptions, AgentTranscript, RunRequest, WorkflowArgs, WorkflowContext, WorkflowEvent, WorkflowInvocation, WorkflowRun, WorkflowScript, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
-import { createAgentExecutionGate } from "./execution-limits";
+import { AgentExecutionLimitError, createAgentExecutionGate, type AgentExecutionLimits } from "./execution-limits";
 import type { ModelPolicy, ModelResolution } from "./model-policy";
 import type { PermissionPolicy } from "./permissions";
 import { validateAgainstSchema } from "./schema-validation";
@@ -124,6 +124,7 @@ export type WorkflowRuntimeOptions = {
   // Output-token estimate for a completed agent() call. Adapters that report
   // real usage should supply this; otherwise a length-based estimate is used.
   estimateTokens?: (prompt: string, result: unknown) => number;
+  executionLimits?: AgentExecutionLimits | undefined;
   resolveWorkflow?: (request: WorkflowInvocation, args?: WorkflowArgs) => Promise<ResolvedWorkflowInvocation>;
 };
 
@@ -133,6 +134,12 @@ export type ResolvedWorkflowInvocation = {
   args?: WorkflowArgs | undefined;
   phaseModels?: Record<string, string> | undefined;
   runModel?: string | undefined;
+  path?: string | undefined;
+  origin?: "saved" | "source" | "path" | "built-in" | undefined;
+  generated?: boolean | undefined;
+  agentCountEstimate?: number | undefined;
+  isolationHints?: string[] | undefined;
+  writeHints?: string[] | undefined;
 };
 
 export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
@@ -140,7 +147,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
   // terminal run, or the execute() continuation that runs the script body.
   function begin(request: RunRequest, runOptions: RunOptions) {
     const run = options.store.createRun(request.name, request.args, request.scriptPath);
-    const gate = options.permissionPolicy?.authorizeDynamicWorkflow({ name: request.name }) ?? { allowed: true };
+    const gate = options.permissionPolicy?.authorizeDynamicWorkflow(permissionRequestFor(request)) ?? { allowed: true };
 
     const execute = async (decision: PermissionDecisionLike): Promise<WorkflowRun> => {
       if (!decision.allowed) {
@@ -149,7 +156,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       }
 
       const counters = { phase: 0 };
-      const agentGate = createAgentExecutionGate();
+      const agentGate = createAgentExecutionGate(options.executionLimits);
       const budget = createBudgetTracker(runOptions.tokenBudget ?? options.tokenBudget ?? null);
       const state: RunState = {
         signal: options.store.registerAbort?.(run.runId),
@@ -264,44 +271,88 @@ function createContext(
     // which calls are treated as prefix.
     const cached = state.replay.take(key, prompt, model?.model, seq);
 
-    return agentGate.run(async () => {
-      if (state.signal?.aborted) throw new WorkflowAbortError();
+    try {
+      return await agentGate.run(async () => {
+        if (state.signal?.aborted) throw new WorkflowAbortError();
 
-      // A replayed call re-applies the SAME token spend the original generation
-      // cost (journaled as `tokens`), so budget.spent()/remaining() are stable
-      // across a fresh run and its resume — a budget-sensitive branch takes the
-      // same path either way. The adapter is still not re-invoked.
-      if (cached.hit) {
-        budget.add(cached.tokens ?? 0);
-        options.store.append(withModel({ runId, type: "agent:cached", index, key, seq, prompt, result: cached.result, ...(cached.tokens !== undefined ? { tokens: cached.tokens } : {}), ...meta }, model));
-        return cached.result;
+        // A replayed call re-applies the SAME token spend the original generation
+        // cost (journaled as `tokens`), so budget.spent()/remaining() are stable
+        // across a fresh run and its resume — a budget-sensitive branch takes the
+        // same path either way. The adapter is still not re-invoked.
+        if (cached.hit) {
+          budget.add(cached.tokens ?? 0);
+          const transcriptPath = writeAgentTranscript(options, {
+            runId,
+            key,
+            seq,
+            index,
+            status: "cached",
+            prompt,
+            result: cached.result,
+            ...(cached.tokens !== undefined ? { tokens: cached.tokens } : {}),
+            ...meta,
+            ...modelTranscriptFields(model),
+          });
+          options.store.append(withModel({ runId, type: "agent:cached", index, key, seq, prompt, result: cached.result, ...(cached.tokens !== undefined ? { tokens: cached.tokens } : {}), ...(transcriptPath ? { transcriptPath } : {}), ...meta }, model));
+          return cached.result;
+        }
+
+        options.store.append(withModel({ runId, type: "agent:start", index, key, seq, prompt, ...meta }, model));
+
+        // Accumulate this call's spend across all generations (incl. schema
+        // retries) so the total can be journaled on agent:done and re-applied on a
+        // future resume's cache hit.
+        let callTokens = 0;
+        try {
+          const result = await runAgentWithSchema(options, prompt, agentOptions, model, {
+            onRetry: (errors, attempt) => {
+              options.store.append(withModel({ runId, type: "agent:retry", index, key, seq, prompt, error: errors.join("; "), ...meta }, model));
+              void attempt;
+            },
+            charge: (chargedPrompt, chargedResult) => {
+              const tokens = options.estimateTokens ? options.estimateTokens(chargedPrompt, chargedResult) : estimateOutputTokens(chargedResult);
+              callTokens += Math.max(0, tokens);
+              budget.add(tokens);
+              enforceEstimatedTokenLimit(options.executionLimits, budget.spent());
+            },
+          });
+          const transcriptPath = writeAgentTranscript(options, {
+            runId,
+            key,
+            seq,
+            index,
+            status: "completed",
+            prompt,
+            result,
+            tokens: callTokens,
+            ...meta,
+            ...modelTranscriptFields(model),
+          });
+          options.store.append(withModel({ runId, type: "agent:done", index, key, seq, prompt, result, tokens: callTokens, ...(transcriptPath ? { transcriptPath } : {}), ...meta }, model));
+          return result;
+        } catch (error) {
+          const message = stringifyError(error);
+          const transcriptPath = writeAgentTranscript(options, {
+            runId,
+            key,
+            seq,
+            index,
+            status: "failed",
+            prompt,
+            error: message,
+            ...meta,
+            ...modelTranscriptFields(model),
+          });
+          options.store.append(withModel({ runId, type: "agent:done", index, key, seq, prompt, error: message, ...(transcriptPath ? { transcriptPath } : {}), ...meta }, model));
+          throw error;
+        }
+      });
+    } catch (error) {
+      if (error instanceof AgentExecutionLimitError) {
+        options.store.append(withModel({ runId, type: "agent:limit", index, key, seq, prompt, error: error.message, ...meta }, model));
       }
-
-      options.store.append(withModel({ runId, type: "agent:start", index, key, seq, prompt, ...meta }, model));
-
-      // Accumulate this call's spend across all generations (incl. schema
-      // retries) so the total can be journaled on agent:done and re-applied on a
-      // future resume's cache hit.
-      let callTokens = 0;
-      try {
-        const result = await runAgentWithSchema(options, prompt, agentOptions, model, {
-          onRetry: (errors, attempt) => {
-            options.store.append(withModel({ runId, type: "agent:retry", index, key, seq, prompt, error: errors.join("; "), ...meta }, model));
-            void attempt;
-          },
-          charge: (chargedPrompt, chargedResult) => {
-            const tokens = options.estimateTokens ? options.estimateTokens(chargedPrompt, chargedResult) : estimateOutputTokens(chargedResult);
-            callTokens += Math.max(0, tokens);
-            budget.add(tokens);
-          },
-        });
-        options.store.append(withModel({ runId, type: "agent:done", index, key, seq, prompt, result, tokens: callTokens, ...meta }, model));
-        return result;
-      } catch (error) {
-        options.store.append(withModel({ runId, type: "agent:done", index, key, seq, prompt, error: stringifyError(error), ...meta }, model));
         throw error;
-      }
-    });
+    }
   };
 
   return {
@@ -327,7 +378,7 @@ function createContext(
         try {
           return await task();
         } catch (error) {
-          if (isAbort(error, state)) throw error;
+          if (isAbort(error, state) || error instanceof AgentExecutionLimitError) throw error;
           return null;
         }
       }));
@@ -345,7 +396,7 @@ function createContext(
             try {
               value = await stage(value, item, index);
             } catch (error) {
-              if (isAbort(error, state)) throw error;
+              if (isAbort(error, state) || error instanceof AgentExecutionLimitError) throw error;
               return null;
             }
           }
@@ -359,6 +410,13 @@ function createContext(
       // matching Claude. The depth guard is checked synchronously.
       if (depth >= MAX_WORKFLOW_DEPTH) {
         throw new Error("Nested workflow() is not allowed: workflows may nest one level only");
+      }
+      const configuredDepth = options.executionLimits?.maxChildWorkflowDepth;
+      if (configuredDepth !== undefined && depth >= configuredDepth) {
+        const title = request.name ?? request.scriptPath ?? "workflow";
+        const error = new AgentExecutionLimitError(`Child workflow depth limit exceeded: maxChildWorkflowDepth=${configuredDepth}`);
+        options.store.append({ runId, type: "workflow:limit", title, error: error.message });
+        throw error;
       }
 
       // The child scope prefix comes from a SEPARATE per-parent child counter, so
@@ -407,7 +465,7 @@ async function resolveChildWorkflow(
   args: WorkflowArgs | undefined,
   resolver: WorkflowRuntimeOptions["resolveWorkflow"],
 ): Promise<ResolvedWorkflowInvocation> {
-  if (request.script) {
+  if (typeof request.script === "function") {
     return {
       name: request.name ?? "workflow",
       script: request.script,
@@ -523,4 +581,45 @@ function withModel(event: WorkflowEvent, resolution: ModelResolution | undefined
     model: resolution.model,
     ...(resolution.requestedModel ? { requestedModel: resolution.requestedModel } : {}),
   };
+}
+
+function permissionRequestFor(request: RunRequest) {
+  return {
+    name: request.name,
+    ...(request.scriptPath ? { scriptPath: request.scriptPath } : {}),
+    ...(request.args !== undefined ? { args: request.args } : {}),
+    argsPreview: previewArgs(request.args),
+    ...(request.origin !== undefined ? { origin: request.origin } : {}),
+    generated: request.generated === true,
+    ...(request.agentCountEstimate !== undefined ? { agentCountEstimate: request.agentCountEstimate } : {}),
+    isolationHints: request.isolationHints ?? [],
+    writeHints: request.writeHints ?? [],
+  };
+}
+
+function previewArgs(args: WorkflowArgs | undefined): string {
+  try {
+    return JSON.stringify(args ?? {}) ?? "{}";
+  } catch {
+    return "[unserializable args]";
+  }
+}
+
+function modelTranscriptFields(resolution: ModelResolution | undefined): Pick<AgentTranscript, "model" | "requestedModel"> {
+  if (!resolution) return {};
+  return {
+    model: resolution.model,
+    ...(resolution.requestedModel ? { requestedModel: resolution.requestedModel } : {}),
+  };
+}
+
+function writeAgentTranscript(options: WorkflowRuntimeOptions, entry: AgentTranscript): string | undefined {
+  return options.store.writeAgentTranscript?.(entry);
+}
+
+function enforceEstimatedTokenLimit(limits: AgentExecutionLimits | undefined, spent: number): void {
+  if (!limits?.stopOnEstimatedTokenLimit) return;
+  if (limits.maxEstimatedTokens === undefined) return;
+  if (spent <= limits.maxEstimatedTokens) return;
+  throw new AgentExecutionLimitError(`Estimated token limit exceeded: maxEstimatedTokens=${limits.maxEstimatedTokens}`);
 }
