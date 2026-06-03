@@ -9,6 +9,8 @@ Read persisted run status through the shared CLI:
 
 ```sh
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-status <run-id> --tree
+agent-workflow-kit workflows --watch
 ```
 
 Use the returned artifact paths instead of transcript scraping.

@@ -273,6 +273,37 @@ export default function ({ phase, log }) {
     expect(status.stdout).toContain(join(projectRoot, ".agent-workflow-kit", "runs", run.runId, "transcripts"));
   });
 
+  test("workflow-status --tree renders phase and agent drilldown", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const status = await runCli(["workflow-status", run.runId, "--project-root", projectRoot, "--tree"]);
+
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout).toContain(`${run.runId} no-write-probe completed`);
+    expect(status.stdout).toContain("actions: save");
+    expect(status.stdout).toContain("phases:");
+    expect(status.stdout).toContain("Probe 1/1 agents done");
+    expect(status.stdout).toContain("#1");
+    expect(status.stdout).toContain("completed");
+    expect(status.stdout).toContain("Return exact JSON");
+  });
+
+  test("human ultracode output renders status summary and actions", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    await runCli(["ultracode", "on", "--project-root", projectRoot, "--json"]);
+
+    const status = await runCli(["ultracode", "status", "--project-root", projectRoot]);
+
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout).toContain("Ultracode enabled");
+    expect(status.stdout).toContain("summary: standing opt-in enabled");
+    expect(status.stdout).toContain("actions: disable, inspect-config");
+    expect(status.stdout).toContain(".agent-workflow-kit/config.json");
+  });
+
   test("reads workflow events from persisted state", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
@@ -301,6 +332,74 @@ export default function ({ phase, log }) {
       name: "no-write-probe",
       status: "completed",
     }));
+  });
+
+  test("human workflows output renders scan-friendly rows with progress and actions", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const run = JSON.parse((await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"])).stdout);
+
+    const list = await runCli(["workflows", "--project-root", projectRoot]);
+
+    expect(list.exitCode).toBe(0);
+    expect(list.stdout).toContain("RUN ID");
+    expect(list.stdout).toContain("STATUS");
+    expect(list.stdout).toContain(run.runId);
+    expect(list.stdout).toContain("no-write-probe");
+    expect(list.stdout).toContain("1/1 agents done");
+    expect(list.stdout).toContain("save");
+    expect(list.stdout).not.toContain("transcripts/");
+  });
+
+  test("workflows --watch refreshes persisted run rows", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const runId = "wf_watchprobe";
+    const runRoot = join(projectRoot, ".agent-workflow-kit", "runs", runId);
+    const transcriptDir = join(runRoot, "transcripts");
+    mkdirSync(transcriptDir, { recursive: true });
+    const artifacts = {
+      root: runRoot,
+      runJson: join(runRoot, "run.json"),
+      eventsJsonl: join(runRoot, "events.jsonl"),
+      transcriptDir,
+    };
+    writeFileSync(artifacts.runJson, `${JSON.stringify({
+      runId,
+      name: "watch-probe",
+      status: "running",
+      artifacts,
+    }, null, 2)}\n`);
+    writeFileSync(artifacts.eventsJsonl, `${JSON.stringify({ runId, type: "run:started", timestamp: "2026-06-03T00:00:00.000Z" })}\n`);
+
+    setTimeout(() => {
+      writeFileSync(artifacts.runJson, `${JSON.stringify({
+        runId,
+        name: "watch-probe",
+        status: "completed",
+        artifacts,
+        result: { ok: true },
+      }, null, 2)}\n`);
+      writeFileSync(
+        artifacts.eventsJsonl,
+        [
+          JSON.stringify({ runId, type: "run:started", timestamp: "2026-06-03T00:00:00.000Z" }),
+          JSON.stringify({ runId, type: "run:completed", result: { ok: true }, timestamp: "2026-06-03T00:00:00.100Z" }),
+          "",
+        ].join("\n"),
+      );
+    }, 30);
+
+    const list = await runCli(["workflows", "--watch", "--project-root", projectRoot], {
+      AGENT_WORKFLOW_KIT_WATCH_INTERVAL_MS: "80",
+      AGENT_WORKFLOW_KIT_WATCH_ITERATIONS: "2",
+    });
+
+    expect(list.exitCode).toBe(0);
+    expect(list.stdout).toContain("watch: workflows refreshing every 80ms");
+    expect(list.stdout).toContain("running");
+    expect(list.stdout).toContain("completed");
+    expect(list.stdout).not.toContain("static snapshot");
   });
 
   test("stops a persisted workflow record and resume re-runs it with journal replay", async () => {

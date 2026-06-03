@@ -277,4 +277,27 @@ export default async function ({ agent }) {
     expect(skill).toContain("agent-workflow-kit workflow-run");
     expect(skill.toLowerCase()).not.toContain("mcp");
   });
+
+  test("harness command and skill docs advertise shared workflow watch and tree UX", () => {
+    const docs = [
+      "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/gemini-workflow-kit/commands/workflows.toml",
+      "plugins/gemini-workflow-kit/commands/workflow-status.toml",
+      "plugins/grok-workflow-kit/commands/workflows.md",
+      "plugins/grok-workflow-kit/commands/workflow-status.md",
+      "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/opencode-workflow-kit/commands/workflows.md",
+      "plugins/opencode-workflow-kit/commands/workflow-status.md",
+      "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+      "plugins/antigravity-workflow-kit/skills/workflows/SKILL.md",
+      "plugins/antigravity-workflow-kit/skills/workflow-status/SKILL.md",
+    ];
+
+    for (const doc of docs) {
+      const content = readFileSync(join(repoRoot, doc), "utf8");
+      expect(content, doc).toContain("workflows --watch");
+      expect(content, doc).toContain("workflow-status");
+      expect(content, doc).toContain("--tree");
+    }
+  });
 });

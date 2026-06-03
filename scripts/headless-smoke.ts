@@ -78,7 +78,9 @@ export const approvedPiFallbackModels = [
 ] as const;
 
 const prompt = [
-  "Run this exact no-write workflow command in the requested project directory and return only the JSON status summary:",
+  "Run this exact no-write workflow command in the requested project directory.",
+  "Return the exact stdout JSON object from the command, unchanged.",
+  "Do not summarize, rewrite, omit, or wrap fields.",
   'cd "{tempProject}" && agent-workflow-kit workflow-run no-write-probe --json',
 ].join("\n");
 

@@ -12,8 +12,12 @@ import {
   type AgentExecutionLimits,
   type PermissionPolicy,
   permissionPolicyForMode,
+  type WorkflowCatalogEntry,
+  type WorkflowCommandService,
+  type WorkflowRun,
   workflowCommandNames,
 } from "@agent-workflow-kit/core";
+import { formatHuman, formatRunTree } from "./workflows-view";
 
 type ParsedArgs = {
   command: string | undefined;
@@ -32,6 +36,8 @@ type ParsedArgs = {
   maxChildWorkflowDepth?: number | undefined;
   maxEstimatedTokens?: number | undefined;
   stopOnEstimatedTokenLimit: boolean;
+  tree: boolean;
+  watch: boolean;
 };
 
 main(process.argv.slice(2)).catch((error) => {
@@ -55,8 +61,19 @@ async function main(argv: string[]) {
   if (!spec) throw new Error(`Expected command: ${workflowCommandNames.join(", ")}`);
 
   const input = inputForCliCommand(spec, args);
+  if (!args.json && args.watch) {
+    await watchCommand(service, spec, input, args);
+    return;
+  }
+
   const result = await dispatchWorkflowCommand(service, spec.name, input);
-  print(result, args.json);
+  if (!args.json && args.tree && spec.name === "workflow-status" && isRunRecord(result)) {
+    const runId = typeof input.runId === "string" ? input.runId : result.runId;
+    printTree(result as WorkflowRun, service.eventsFor(runId));
+    return;
+  }
+
+  print(result, { json: args.json });
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -76,6 +93,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   let maxChildWorkflowDepth: number | undefined;
   let maxEstimatedTokens: number | undefined;
   let stopOnEstimatedTokenLimit = false;
+  let tree = false;
+  let watch = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -91,6 +110,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--json") {
       json = true;
+      continue;
+    }
+
+    if (arg === "--tree") {
+      tree = true;
+      continue;
+    }
+
+    if (arg === "--watch") {
+      watch = true;
       continue;
     }
 
@@ -197,7 +226,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit };
+  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch };
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
@@ -267,8 +296,8 @@ function parseWorkflowArgsJson(value: string): unknown {
   }
 }
 
-function print(value: unknown, json: boolean): void {
-  if (json) {
+function print(value: unknown, options: { json: boolean }): void {
+  if (options.json) {
     console.log(JSON.stringify(value));
     return;
   }
@@ -276,62 +305,79 @@ function print(value: unknown, json: boolean): void {
   console.log(formatHuman(value));
 }
 
-function formatHuman(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map((entry) => formatHuman(entry)).join("\n");
+function printTree(run: WorkflowRun, events: Parameters<typeof formatRunTree>[1]): void {
+  console.log(formatRunTree(run, events));
+}
+
+async function watchCommand(
+  service: WorkflowCommandService,
+  spec: WorkflowCatalogEntry,
+  input: Record<string, unknown>,
+  args: ParsedArgs,
+): Promise<void> {
+  if (!isWatchableCommand(spec.name)) {
+    throw new Error("--watch only applies to read-only commands: workflows, workflow-status, workflow-events");
   }
 
-  if (isRecord(value) && "runId" in value && "status" in value) {
-    return formatRun(value as Record<string, unknown>);
+  const intervalMs = watchIntervalMs();
+  const iterations = watchIterations();
+  for (let iteration = 1; iterations === undefined || iteration <= iterations; iteration += 1) {
+    const body = await renderReadOnlyCommand(service, spec, input, args);
+    writeWatchFrame(`watch: ${spec.name} refreshing every ${intervalMs}ms`, body, iteration);
+    if (iterations !== undefined && iteration >= iterations) break;
+    await sleep(intervalMs);
   }
+}
 
-  if (isRecord(value) && "type" in value && "runId" in value) {
-    return formatEvent(value as Record<string, unknown>);
+async function renderReadOnlyCommand(
+  service: WorkflowCommandService,
+  spec: WorkflowCatalogEntry,
+  input: Record<string, unknown>,
+  args: ParsedArgs,
+): Promise<string> {
+  const result = await dispatchWorkflowCommand(service, spec.name, input);
+  if (args.tree && spec.name === "workflow-status" && isRunRecord(result)) {
+    const runId = typeof input.runId === "string" ? input.runId : result.runId;
+    return formatRunTree(result, service.eventsFor(runId));
   }
-
-  return JSON.stringify(value);
+  return formatHuman(result);
 }
 
-// A run record: header line plus any error, result summary, and artifact path —
-// instead of dropping everything but runId/name/status.
-function formatRun(run: Record<string, unknown>): string {
-  const lines = [[run.runId, run.name, run.status].filter(Boolean).join(" ")];
-  if (typeof run.error === "string" && run.error) lines.push(`  error: ${run.error}`);
-  if (run.result !== undefined) lines.push(`  result: ${summarize(run.result)}`);
-  const progress = formatProgress(run.progress);
-  if (progress) lines.push(`  progress: ${progress}`);
-  const artifacts = run.artifacts as { runJson?: string; transcriptDir?: string } | undefined;
-  if (artifacts?.runJson) lines.push(`  run.json: ${artifacts.runJson}`);
-  if (artifacts?.transcriptDir) lines.push(`  transcripts: ${artifacts.transcriptDir}`);
-  return lines.join("\n");
+function writeWatchFrame(header: string, body: string, iteration: number): void {
+  const interactive = Boolean(process.stdout.isTTY);
+  const clear = interactive ? "\x1b[2J\x1b[H" : "";
+  const separator = !interactive && iteration > 1 ? "\n" : "";
+  process.stdout.write(`${separator}${clear}${header}\n${body}\n`);
 }
 
-// An event: index, type, and the most relevant detail (title/model/error/message).
-function formatEvent(event: Record<string, unknown>): string {
-  const head = [event.index !== undefined ? `#${event.index}` : undefined, event.type]
-    .filter(Boolean)
-    .join(" ");
-  const detail = event.title ?? event.message ?? event.error ?? event.model;
-  return detail ? `${head} ${detail}` : head;
+function isWatchableCommand(command: string): boolean {
+  return command === "workflows" || command === "workflow-status" || command === "workflow-events";
 }
 
-function summarize(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+function watchIntervalMs(): number {
+  return positiveEnvInteger("AGENT_WORKFLOW_KIT_WATCH_INTERVAL_MS") ?? 1_000;
 }
 
-function formatProgress(value: unknown): string | undefined {
-  if (!isRecord(value)) return undefined;
-  const done = value.agentDone;
-  const total = value.agentTotal;
-  if (typeof done !== "number" || typeof total !== "number") return undefined;
-  const parts = [`${done}/${total} agents done`];
-  if (typeof value.agentRunning === "number" && value.agentRunning > 0) parts.push(`${value.agentRunning} running`);
-  if (typeof value.agentFailed === "number" && value.agentFailed > 0) parts.push(`${value.agentFailed} failed`);
-  if (typeof value.tokenTotal === "number" && value.tokenTotal > 0) parts.push(`${value.tokenTotal} tokens`);
-  return parts.join(", ");
+function watchIterations(): number | undefined {
+  return positiveEnvInteger("AGENT_WORKFLOW_KIT_WATCH_ITERATIONS");
+}
+
+function positiveEnvInteger(name: string): number | undefined {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${name} requires a positive integer`);
+  return parsed;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRunRecord(value: unknown): value is WorkflowRun {
+  return isRecord(value) && typeof value.runId === "string" && typeof value.name === "string" && typeof value.status === "string";
 }

@@ -14,10 +14,12 @@ agent-workflow-kit workflow "<task>" --json
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-run <workflow> --args-json '{"key":"value"}' --json
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-status <run-id> --tree
 agent-workflow-kit workflow-events <run-id> --json
 agent-workflow-kit workflow-resume <run-id> --json
 agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
+agent-workflow-kit workflows --watch
 agent-workflow-kit deep-research "<question>" --json
 agent-workflow-kit ultracode on --json
 agent-workflow-kit ultracode off --json
@@ -38,10 +40,12 @@ run_json="$(agent-workflow-kit workflow-run no-write-probe --json)"
 run_id="$(printf '%s' "$run_json" | bun -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); console.log(data.runId);')"
 printf '%s\n' "$run_json"
 agent-workflow-kit workflow-status "$run_id" --json
+agent-workflow-kit workflow-status "$run_id" --tree
 agent-workflow-kit workflow-events "$run_id" --json
 agent-workflow-kit workflow-resume "$run_id" --json
 agent-workflow-kit workflow-stop "$run_id" --json
 agent-workflow-kit workflows --json
+AGENT_WORKFLOW_KIT_WATCH_ITERATIONS=1 agent-workflow-kit workflows --watch
 agent-workflow-kit deep-research "file-command-smoke" --json
 ```
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->

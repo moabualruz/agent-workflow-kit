@@ -5,22 +5,35 @@ import { join } from "node:path";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const roots: string[] = [];
+const smokeFiles = [
+  "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
+  "plugins/gemini-workflow-kit/commands/workflow-run.toml",
+  "plugins/opencode-workflow-kit/commands/workflow-run.md",
+  "plugins/grok-workflow-kit/commands/workflow-run.md",
+  "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
+  "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
+  "plugins/antigravity-workflow-kit/skills/workflow-run/SKILL.md",
+];
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe("file-command harness smoke blocks", () => {
+  test("executable smoke blocks bound live watch commands", () => {
+    for (const file of smokeFiles) {
+      const smoke = extractExecutableSmoke(readFileSync(join(repoRoot, file), "utf8"));
+      for (const line of smoke.split("\n")) {
+        if (!line.includes("agent-workflow-kit workflows --watch")) continue;
+        expect({ file, line }).toEqual(expect.objectContaining({
+          line: expect.stringContaining("AGENT_WORKFLOW_KIT_WATCH_ITERATIONS=1"),
+        }));
+      }
+    }
+  });
+
   test("skill and command workflow surfaces execute the shared CLI path", async () => {
-    for (const file of [
-      "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
-      "plugins/gemini-workflow-kit/commands/workflow-run.toml",
-      "plugins/opencode-workflow-kit/commands/workflow-run.md",
-      "plugins/grok-workflow-kit/commands/workflow-run.md",
-      "plugins/grok-workflow-kit/skills/workflow-kit/SKILL.md",
-      "plugins/pi-workflow-kit/skills/workflow-kit/SKILL.md",
-      "plugins/antigravity-workflow-kit/skills/workflow-run/SKILL.md",
-    ]) {
+    for (const file of smokeFiles) {
       const smoke = extractExecutableSmoke(readFileSync(join(repoRoot, file), "utf8"));
       const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-command-project-"));
       const binRoot = mkdtempSync(join(tmpdir(), "awk-file-command-bin-"));

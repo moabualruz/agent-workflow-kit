@@ -2,5 +2,9 @@ description = "Show Agent Workflow Kit workflow run status"
 prompt = """
 Call the shared CLI directly:
 agent-workflow-kit workflow-status <run-id> --json
-Return concise run status and artifact path only.
+For phase and agent drilldown, use:
+agent-workflow-kit workflow-status <run-id> --tree
+For scan-friendly monitoring, use:
+agent-workflow-kit workflows --watch
+Return concise run status, progress, actions, and artifact paths only.
 """

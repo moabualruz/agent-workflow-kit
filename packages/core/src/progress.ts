@@ -1,11 +1,16 @@
 import type {
   RunStatus,
+  UltracodeDisplay,
+  WorkflowAgentDisplay,
+  WorkflowDisplayAction,
   WorkflowEvent,
   WorkflowPhaseProgress,
   WorkflowProgress,
+  WorkflowRunDisplay,
   WorkflowRun,
   WorkflowRunningAgentProgress,
 } from "./domain";
+import type { UltracodeResult } from "./config";
 
 type AgentProgressState = {
   key: string;
@@ -114,6 +119,139 @@ export function projectWorkflowProgress(
     recentEvents: events.slice(-5),
     longestRunningAgent: longestRunningAgent(agentStates, now),
   };
+}
+
+export function projectWorkflowDisplay(
+  run: WorkflowRun,
+  events: WorkflowEvent[],
+  options: { now?: number } = {},
+): WorkflowRunDisplay {
+  const progress = run.progress ?? projectWorkflowProgress(run, events, options);
+  const agents = agentDisplays(events);
+  const agentsByPhase = groupAgentsByPhase(agents);
+  const phases = progress.phases.map((phase) => ({
+    id: `phase:${phase.title}`,
+    title: phase.title,
+    ...(phase.kind ? { kind: phase.kind } : {}),
+    summary: progressSummary(phase),
+    agentTotal: phase.agentTotal,
+    agentDone: phase.agentDone,
+    agentRunning: phase.agentRunning,
+    agentFailed: phase.agentFailed,
+    agentCached: phase.agentCached,
+    tokenTotal: phase.tokenTotal,
+    agents: agentsByPhase.get(phase.title) ?? [],
+  }));
+
+  return {
+    runId: run.runId,
+    title: run.name,
+    status: run.status,
+    summary: progressSummary(progress),
+    elapsedMs: progress.elapsedMs,
+    tokenTotal: progress.tokenTotal,
+    warnings: progress.warnings,
+    actions: actionsForRun(run.status),
+    phases,
+    recentEvents: progress.recentEvents,
+    ...(run.artifacts ? { artifacts: run.artifacts } : {}),
+  };
+}
+
+export function projectUltracodeDisplay(result: UltracodeResult): UltracodeDisplay {
+  const status = result.effort.orchestration;
+  const summary = [
+    `standing opt-in ${result.standingOptIn ? "enabled" : "disabled"}`,
+    `keyword trigger ${result.keywordTriggerEnabled ? "enabled" : "disabled"}`,
+    `orchestration ${result.effort.orchestration}`,
+    `model effort ${result.effort.modelEffort}`,
+  ].join("; ");
+  return {
+    title: "Ultracode",
+    status,
+    summary,
+    path: result.path,
+    warnings: result.disabledReason ? [`disabled by ${result.disabledReason}`] : [],
+    actions: [
+      result.ultracode
+        ? { id: "disable", label: "Disable ultracode", enabled: true }
+        : { id: "enable", label: "Enable ultracode", enabled: true },
+      { id: "inspect-config", label: "Inspect config", enabled: true },
+    ],
+  };
+}
+
+function agentDisplays(events: WorkflowEvent[]): WorkflowAgentDisplay[] {
+  const agents = new Map<string, WorkflowAgentDisplay>();
+
+  for (const event of events) {
+    if (event.type !== "agent:start" && event.type !== "agent:done" && event.type !== "agent:cached") continue;
+
+    const key = agentKey(event);
+    const existing = agents.get(key);
+    const phase = event.group ?? existing?.phase ?? UNGROUPED_PHASE;
+    const status = agentDisplayStatus(event);
+    agents.set(key, {
+      id: `agent:${key}`,
+      key,
+      index: event.index ?? existing?.index,
+      phase,
+      label: event.label ?? existing?.label,
+      agentType: event.agentType ?? existing?.agentType,
+      status,
+      prompt: event.prompt ?? existing?.prompt,
+      model: event.model ?? existing?.model,
+      requestedModel: event.requestedModel ?? existing?.requestedModel,
+      tokens: Math.max(0, event.tokens ?? existing?.tokens ?? 0),
+      transcriptPath: event.transcriptPath ?? existing?.transcriptPath,
+      resultPreview: event.result !== undefined ? preview(event.result) : existing?.resultPreview,
+      error: event.error ?? existing?.error,
+    });
+  }
+
+  return [...agents.values()].sort((a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER));
+}
+
+function agentDisplayStatus(event: WorkflowEvent): WorkflowAgentDisplay["status"] {
+  if (event.type === "agent:cached") return "cached";
+  if (event.type === "agent:done") return event.error ? "failed" : "completed";
+  return "running";
+}
+
+function groupAgentsByPhase(agents: WorkflowAgentDisplay[]): Map<string, WorkflowAgentDisplay[]> {
+  const grouped = new Map<string, WorkflowAgentDisplay[]>();
+  for (const agent of agents) {
+    const list = grouped.get(agent.phase) ?? [];
+    list.push(agent);
+    grouped.set(agent.phase, list);
+  }
+  return grouped;
+}
+
+function actionsForRun(status: RunStatus): WorkflowDisplayAction[] {
+  if (status === "running") return [
+    { id: "stop", label: "Stop workflow", enabled: true },
+  ];
+  if (status === "stopped" || status === "failed") return [
+    { id: "resume", label: "Resume workflow", enabled: true },
+    { id: "save", label: "Save workflow command", enabled: true },
+  ];
+  return [
+    { id: "save", label: "Save workflow command", enabled: true },
+  ];
+}
+
+function progressSummary(value: Pick<WorkflowProgress | WorkflowPhaseProgress, "agentDone" | "agentTotal" | "agentRunning" | "agentFailed" | "tokenTotal">): string {
+  const parts = [`${value.agentDone}/${value.agentTotal} agents done`];
+  if (value.agentRunning > 0) parts.push(`${value.agentRunning} running`);
+  if (value.agentFailed > 0) parts.push(`${value.agentFailed} failed`);
+  if (value.tokenTotal > 0) parts.push(`${value.tokenTotal} tokens`);
+  return parts.join(", ");
+}
+
+function preview(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
 }
 
 function ensurePhase(phases: Map<string, PhaseState>, title: string, kind?: string): PhaseState {

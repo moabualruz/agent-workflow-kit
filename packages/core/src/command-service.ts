@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { setUltracode, workflowDisableReason, type WorkflowDisableControls } from "./config";
-import type { AgentFunction, WorkflowArgs, WorkflowLaunchInput, WorkflowLaunchOutput, WorkflowRun, WorkflowStore } from "./domain";
+import type { AgentFunction, WorkflowArgs, WorkflowLaunchInput, WorkflowLaunchOutput, WorkflowRun, WorkflowRunSnapshot, WorkflowStore } from "./domain";
 import { requireText } from "./errors";
 import type { AgentExecutionLimits } from "./execution-limits";
 import type { ModelPolicy } from "./model-policy";
@@ -10,7 +10,7 @@ import { projectWorkflowProgress } from "./progress";
 import { createWorkflowRuntime } from "./runtime";
 import { resolveWorkflow, resolveWorkflowInvocation } from "./saved-workflows";
 import { schemaDefaultAgent } from "./schema-default-agent";
-import { createFileStore } from "./store";
+import { createFileStore, workflowRunSnapshot, workflowRunSnapshots } from "./store";
 import { saveGeneratedWorkflow } from "./workflow-authoring";
 
 export type WorkflowCommandServiceOptions = {
@@ -53,10 +53,11 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     return run;
   };
 
-  const withProgress = (run: WorkflowRun): WorkflowRun => ({
+  const withProgress = ({ run, events }: WorkflowRunSnapshot): WorkflowRun => ({
     ...run,
-    progress: projectWorkflowProgress(run, store.eventsFor(run.runId)),
+    progress: projectWorkflowProgress(run, events),
   });
+  const withProgressForRun = (run: WorkflowRun): WorkflowRun => withProgress({ run, events: store.eventsFor(run.runId) });
 
   const runWorkflow = async (input: WorkflowLaunchInput, runOpts: { detach?: boolean } = {}) => {
     const workflow = await resolveWorkflowInvocation(options.projectRoot, input, undefined, {
@@ -90,21 +91,21 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
         homeRoot: options.homeRoot,
       });
       const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, generated: true, args: { task: normalizedTask, workflow: generated } });
-      return recordScriptHash(run, workflow.path);
+      return withProgressForRun(recordScriptHash(run, workflow.path));
     },
 
     async runWorkflow(input: WorkflowLaunchInput, runOpts: { detach?: boolean } = {}) {
-      return runWorkflow(input, runOpts);
+      return withProgressForRun(await runWorkflow(input, runOpts));
     },
 
     async runSavedWorkflow(name: string, args: WorkflowArgs = {}, runOpts: { detach?: boolean; resumeFromRunId?: string | undefined } = {}) {
       const workflowName = requireText(name, "workflow-run requires workflow name");
       // Detached: returns the "running" handle immediately; poll with
       // workflow-status / workflow-events for completion.
-      return runWorkflow(
+      return withProgressForRun(await runWorkflow(
         { name: workflowName, args, ...(runOpts.resumeFromRunId ? { resumeFromRunId: runOpts.resumeFromRunId } : {}) },
         runOpts.detach ? { detach: true } : {},
-      );
+      ));
     },
 
     async launchSavedWorkflow(name: string, args: WorkflowArgs = {}): Promise<WorkflowLaunchOutput> {
@@ -117,11 +118,11 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
     },
 
     getRun(runId: string) {
-      return withProgress(store.getRun(requireText(runId, "workflow-status requires run id")));
+      return withProgress(workflowRunSnapshot(store, requireText(runId, "workflow-status requires run id")));
     },
 
     listRuns() {
-      return store.listRuns().map(withProgress);
+      return workflowRunSnapshots(store).map(withProgress);
     },
 
     eventsFor(runId: string) {
@@ -163,15 +164,15 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
           { ...workflow, args: prior.args === undefined ? {} : prior.args, scriptPath: workflow.path },
           { resumeFromRunId: id },
         );
-        return recordScriptHash(run, workflow.path);
+        return withProgressForRun(recordScriptHash(run, workflow.path));
       } catch {
         store.append({ runId: id, type: "run:resume-skipped", message: `could not resolve workflow for resume: ${ref}` });
-        return store.resume(id);
+        return withProgressForRun(store.resume(id));
       }
     },
 
     stopRun(runId: string) {
-      return store.stop(requireText(runId, "workflow-stop requires run id"));
+      return withProgressForRun(store.stop(requireText(runId, "workflow-stop requires run id")));
     },
 
     async runDeepResearch(question: string) {
@@ -181,7 +182,7 @@ export function createWorkflowCommandService(options: WorkflowCommandServiceOpti
         homeRoot: options.homeRoot,
       });
       const run = await runtime.run({ ...workflow, name: generated.name, scriptPath: workflow.path, generated: true, args: { question: normalizedQuestion, workflow: generated } });
-      return recordScriptHash(run, workflow.path);
+      return withProgressForRun(recordScriptHash(run, workflow.path));
     },
 
     // Explicit ultracode enablement — ultracode is never ambient; it is turned on

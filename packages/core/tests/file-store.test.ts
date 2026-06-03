@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFileStore, createWorkflowRuntime, type WorkflowScript } from "../src/index";
+import { createFileStore, createWorkflowRuntime, workflowRunSnapshot, workflowRunSnapshots, type WorkflowScript } from "../src/index";
 
 const roots: string[] = [];
 
@@ -120,6 +120,30 @@ describe("file workflow store", () => {
 
     expect(store.getRun(run.runId)).toEqual(expect.objectContaining({ status: "completed" }));
     expect(store.listRuns()).toContainEqual(expect.objectContaining({ runId: run.runId }));
+  });
+
+  test("returns run/event snapshots for workflow display projections", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-file-store-"));
+    roots.push(projectRoot);
+    const store = createFileStore({ projectRoot });
+    const run = store.createRun("snapshot-probe");
+    store.append({ runId: run.runId, type: "phase", title: "Display" });
+    const completed = store.complete(run.runId, { ok: true });
+
+    expect(workflowRunSnapshot(store, run.runId)).toEqual({
+      run: completed,
+      events: expect.arrayContaining([
+        expect.objectContaining({ runId: run.runId, type: "run:started" }),
+        expect.objectContaining({ runId: run.runId, type: "phase", title: "Display" }),
+        expect.objectContaining({ runId: run.runId, type: "run:completed" }),
+      ]),
+    });
+    expect(workflowRunSnapshots(store)).toEqual([
+      expect.objectContaining({
+        run: expect.objectContaining({ runId: run.runId, status: "completed" }),
+        events: expect.arrayContaining([expect.objectContaining({ type: "phase", title: "Display" })]),
+      }),
+    ]);
   });
 
   test("records stopped and resumed states without deleting run artifacts", async () => {

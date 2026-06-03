@@ -73,14 +73,14 @@ The shared workflow UX is intentionally CLI-first and file-backed. Every harness
 
 | Harness | Current UX |
 |---|---|
-| Codex | Skill-driven CLI calls; inspect progress with `workflow-status` / `workflow-events` |
-| Gemini CLI | Command-file CLI calls; reload/install behavior is owned by Gemini |
-| OpenCode | Native plugin tools plus command files; dynamic workflow execution asks OpenCode permission `agent-workflow-kit.workflow` and can be configured as `allow`, `ask`, or `deny` |
-| Grok Build | Skill and command-file CLI calls; inspect progress with the shared CLI |
-| Pi | Registered commands/tools plus a skill; tool calls return structured details, but rich session UI is host-owned |
-| Antigravity CLI | Skill-driven CLI calls, one skill per shared command |
+| Codex | Skill-driven CLI calls; inspect the shared progress tree with `workflow-status --tree` or the live run table with `workflows --watch` |
+| Gemini CLI | Command-file CLI calls; reload/install behavior is owned by Gemini; shared docs point to `workflows --watch` and `workflow-status --tree` |
+| OpenCode | Native plugin tools plus command files; dynamic workflow execution asks OpenCode permission `agent-workflow-kit.workflow` with approval-title, cost-caution, once/always/deny/view-script actions, and display summaries on run output |
+| Grok Build | Skill and command-file CLI calls; inspect progress with the shared watch/table/tree CLI |
+| Pi | Registered commands/tools plus a skill; tool calls return structured details plus a host-renderable workflow display summary |
+| Antigravity CLI | Skill-driven CLI calls, one skill per shared command, including watch/table/tree progress guidance |
 
-Agent Workflow Kit does not yet ship Claude-style live task panels or in-session progress trees for every harness. The matched surface today is command parity, persisted run state, progress projection, permission policy, transcript artifacts, and native tool registration where the host exposes it.
+Agent Workflow Kit now ships the shared data model and CLI UX for live run tables, phase/agent trees, and ultracode status/actions. Fully native in-session panels still depend on each host API, so harness adapters stay thin and expose the same command/display contract where the host allows it.
 
 ## First Workflow
 
@@ -108,10 +108,12 @@ Inspect the run:
 
 ```sh
 agent-workflow-kit workflow-status <run-id> --json
+agent-workflow-kit workflow-status <run-id> --tree
 agent-workflow-kit workflow-events <run-id>
+agent-workflow-kit workflows --watch
 ```
 
-Machine-readable run output includes `runId`, `name`, `status`, `args`, `result` or `error`, `artifacts.root`, `artifacts.runJson`, `artifacts.eventsJsonl`, and `artifacts.transcriptDir`. Human `workflow-status` output summarizes result/error, progress, `run.json`, and transcript location without dumping raw transcript text.
+Machine-readable run output includes `runId`, `name`, `status`, `args`, `result` or `error`, `artifacts.root`, `artifacts.runJson`, `artifacts.eventsJsonl`, and `artifacts.transcriptDir`. Human `workflow-status` output summarizes result/error, progress, `run.json`, and transcript location without dumping raw transcript text. `workflow-status --tree` renders phase and agent drilldown; `workflows --watch` refreshes the persisted run table until interrupted.
 
 ## Workflow File Shape
 
@@ -198,7 +200,7 @@ Agent Workflow Kit tracks [Claude Code's dynamic workflows + ultracode](https://
 | Ultracode: standing opt-in, author-per-task, verify-until-converge | Explicit `ultracode` toggle drives the same behavior in skills | ✅ Behavior; toggle is explicit |
 | Concurrency cap `min(16, cores-2)`, 1000-agent lifetime cap | Host-owned by default; optional explicit runtime policy can fail closed with limit events | ⚠️ Configurable |
 | xhigh reasoning-effort signal | Host model setting; a CLI cannot set it | ⛔ Out of scope |
-| In-session live `/workflows` progress tree | Poll `workflow-status` / `workflow-events` instead | ⛔ Out of scope (data model matched) |
+| In-session live `/workflows` progress tree | CLI `workflows --watch` and `workflow-status --tree`; host-native panels remain adapter/API dependent | ⚠️ CLI matched |
 | `<task-notification>` injected into a live turn | `run:notify` event on a detached run; harness polls | ⛔ Out of scope |
 
 Note on `budget`: Agent Workflow Kit keeps `budget.spent()` / `budget.remaining()` readable inside workflows. Host harnesses still own real provider limits by default; pass explicit CLI/runtime limits when you want local fail-closed policy.
@@ -222,13 +224,13 @@ Project files win over the personal fallback so repositories can keep determinis
 |---|---|
 | `workflow "<task>"` | Generate a persistent workflow under `.agent-workflow-kit/workflows/` and run it |
 | `workflow-run <name-or-path>` | Execute a saved workflow name or direct JavaScript file path |
-| `workflow-status <run-id>` | Read the persisted run status and result |
+| `workflow-status <run-id>` | Read the persisted run status and result; add `--tree` for phase/agent drilldown |
 | `workflow-events <run-id>` | Stream the append-like workflow event log |
 | `workflow-resume <run-id>` | Re-run a workflow, replaying the unchanged agent prefix from its journal |
 | `workflow-stop <run-id>` | Cancel a workflow run, aborting it if still in flight |
-| `workflows` | List persisted workflow runs |
+| `workflows` | List persisted workflow runs; add `--watch` for a refreshed run table |
 | `deep-research "<topic>"` | Generate a gather/refute/converge research workflow and return a structured report with source ledger, claim ledger, contradiction checks, confidence table, and rejected claims |
-| `ultracode <on\|off\|status>` | Explicitly enable, disable, or report ultracode mode (persisted to project config) |
+| `ultracode <on\|off\|status>` | Explicitly enable, disable, or report ultracode mode with human/native status actions (persisted to project config) |
 
 Common flags:
 
@@ -247,6 +249,8 @@ Common flags:
 | `--max-child-workflow-depth <n>` | Fail closed when child workflow nesting exceeds the explicit depth |
 | `--max-estimated-tokens <n>` | Track estimated output tokens against an explicit local limit |
 | `--stop-on-estimated-token-limit` | Stop the run when the estimated-token limit is exceeded instead of only recording a limit event |
+| `--tree` | Render `workflow-status` as a phase/agent tree |
+| `--watch` | Refresh read-only workflow views (`workflows`, `workflow-status`, `workflow-events`) until interrupted |
 | `--json` | Print machine-readable output |
 
 ## Model Alias Policy
@@ -287,7 +291,7 @@ Each run is stored under:
     └── <agent-call>.json
 ```
 
-`run.json` holds final status, result, error, original args, progress summary, and artifact paths. `events.jsonl` records phases, logs, agent starts, agent completions, replayed (`agent:cached`) calls, permission decisions, child workflow records, limit events, failures, resume markers, and stop signals. `transcripts/` stores one compact JSON transcript per live or cached agent call.
+`run.json` holds final status, result, error, original args, and artifact paths. Progress summaries and display trees are projected from `run.json` plus `events.jsonl`; they are not stored as a separate durable progress document. `events.jsonl` records phases, logs, agent starts, agent completions, replayed (`agent:cached`) calls, permission decisions, child workflow records, limit events, failures, resume markers, and stop signals. `transcripts/` stores one compact JSON transcript per live or cached agent call.
 
 ## Security Model
 
@@ -307,8 +311,8 @@ The shared runtime lives in `packages/core`:
 
 | Module | Responsibility |
 |---|---|
-| `domain.ts` | Workflow domain types and runtime interfaces |
-| `store.ts` | In-memory and file-backed run/event persistence |
+| `domain.ts` | Workflow domain, progress, display, and runtime interface types |
+| `store.ts` | In-memory/file-backed run-event persistence and run/event snapshot helpers for display projection |
 | `runtime.ts` | Workflow execution semantics |
 | `execution-limits.ts` | Optional local execution-limit policy for agent calls, concurrency, child workflow depth, and estimated tokens |
 | `workflow-authoring.ts` | Generated workflow names and project workflow file writes |
@@ -317,12 +321,19 @@ The shared runtime lives in `packages/core`:
 | `command-catalog.ts` | Public command/tool registry, argument mapping, and native input schemas |
 | `model-policy.ts` | Model alias resolution before harness adapter calls |
 | `permissions.ts` | Permission modes and dynamic-workflow authorization policies |
-| `config.ts` | Project/user config, workflow disable hierarchy, and explicit ultracode toggle |
-| `progress.ts` | Progress projection from persisted run events |
+| `config.ts` | Project/user config, workflow disable hierarchy, and explicit ultracode toggle state |
+| `progress.ts` | Workflow progress/display projection and ultracode status/action projection |
 | `schema-validation.ts` | Zero-dependency JSON Schema subset validator for `agent()` schemas |
 | `workflow-meta.ts` | Pure-literal `meta` block parser for Claude-style workflow bodies |
 
 Adapters stay thin: CLI, skills, commands, and native plugin handlers all dispatch through the shared command catalog.
+
+The CLI view layer lives outside core:
+
+| Module | Responsibility |
+|---|---|
+| `packages/cli/src/cli.ts` | CLI argument parsing, command dispatch, read-only watch loop, and JSON/human output selection |
+| `packages/cli/src/workflows-view.tsx` | Human table/tree formatting for workflow runs and ultracode status |
 
 ## Development
 

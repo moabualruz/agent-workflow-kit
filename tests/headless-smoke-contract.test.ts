@@ -26,6 +26,8 @@ describe("headless smoke contract", () => {
     for (const target of headlessSmokeTargets) {
       expect(target.prompt).toContain("agent-workflow-kit workflow-run no-write-probe --json");
       expect(target.prompt).toContain('cd "{tempProject}" &&');
+      expect(target.prompt).toContain("Return the exact stdout JSON object");
+      expect(target.prompt).toContain("Do not summarize, rewrite, omit, or wrap fields");
       expect(JSON.stringify(target).toLowerCase()).not.toContain("mcp");
     }
   });

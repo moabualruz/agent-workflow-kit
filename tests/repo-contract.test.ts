@@ -81,6 +81,11 @@ describe("standalone repository contract", () => {
     expect(rootPackage.bin?.["agent-workflow-kit"]).toBe("packages/cli/src/cli.ts");
   });
 
+  test("CLI workflow UI lives in the command entrypoint and view artifact", () => {
+    expect(existsSync(join(repoRoot, "packages/cli/src/cli.ts"))).toBe(true);
+    expect(existsSync(join(repoRoot, "packages/cli/src/workflows-view.tsx"))).toBe(true);
+  });
+
   test("README command summary names every shared workflow command", () => {
     const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
     const summary = readme.match(/Use familiar commands: (?<commands>.+)\./)?.groups?.commands ?? "";

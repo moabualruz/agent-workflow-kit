@@ -62,6 +62,9 @@ export default async function ({ agent }) {
         always: ["agent-workflow-kit.workflow"],
         metadata: expect.objectContaining({
           name: "approval-probe",
+          approvalTitle: "Run workflow approval-probe",
+          costCaution: "Workflow runs can launch multiple agents and consume more tokens than a normal turn.",
+          actions: ["once", "always", "deny", "view-script"],
           scriptPath,
           argsPreview: "{\"tenantId\":\"tenant-1\"}",
           origin: "saved",
@@ -72,6 +75,52 @@ export default async function ({ agent }) {
         }),
       }),
     ]);
+  });
+
+  test("workflow_run returns display summary in parsed JSON output", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-opencode-display-"));
+    roots.push(projectRoot);
+    const server = await workflowKitPlugin.server({ directory: projectRoot } as any);
+
+    const run = JSON.parse(String(await (server.tool as any).workflow_run.execute({
+      workflow: "no-write-probe",
+      projectRoot,
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any)));
+
+    expect(run).toEqual(expect.objectContaining({
+      name: "no-write-probe",
+      status: "completed",
+      display: expect.objectContaining({
+        summary: "1/1 agents done, 3 tokens",
+        actions: [{ id: "save", label: "Save workflow command", enabled: true }],
+      }),
+    }));
+  });
+
+  test("ultracode native tool returns display summary in parsed JSON output", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-opencode-ultracode-"));
+    roots.push(projectRoot);
+    const server = await workflowKitPlugin.server({ directory: projectRoot } as any);
+
+    const status = JSON.parse(String(await (server.tool as any).ultracode.execute({
+      action: "status",
+      projectRoot,
+    }, {
+      directory: projectRoot,
+      worktree: projectRoot,
+    } as any)));
+
+    expect(status).toEqual(expect.objectContaining({
+      ultracode: false,
+      display: expect.objectContaining({
+        title: "Ultracode",
+        status: "disabled",
+        actions: expect.arrayContaining([{ id: "enable", label: "Enable ultracode", enabled: true }]),
+      }),
+    }));
   });
 
   test("workflow_run fails closed when OpenCode denies dynamic workflow permission", async () => {

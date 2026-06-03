@@ -4,12 +4,16 @@ import {
   createWorkflowCommandService,
   dispatchWorkflowCommand,
   parseModelAliases,
+  projectUltracodeDisplay,
+  projectWorkflowDisplay,
+  type UltracodeResult,
   workflowCommandCatalog,
   workflowCommandToolInputs,
   type PermissionPolicy,
   type WorkflowPermissionRequest,
   type WorkflowCatalogEntry,
   type WorkflowCommandToolInputKind,
+  type WorkflowRun,
 } from "../../../packages/core/src/index";
 
 const WORKFLOW_PERMISSION = "agent-workflow-kit.workflow";
@@ -68,7 +72,7 @@ function readOptionalString(value: unknown): string | undefined {
 }
 
 function stringify(value: unknown): string {
-  return JSON.stringify(value);
+  return JSON.stringify(present(value));
 }
 
 function permissionPolicyForOpenCode(context: Partial<Pick<ToolContext, "ask">>): PermissionPolicy | undefined {
@@ -108,6 +112,9 @@ function permissionPatternsFor(request: WorkflowPermissionRequest): string[] {
 
 function permissionMetadataFor(request: WorkflowPermissionRequest): Record<string, unknown> {
   return {
+    approvalTitle: `Run workflow ${request.name}`,
+    costCaution: "Workflow runs can launch multiple agents and consume more tokens than a normal turn.",
+    actions: ["once", "always", "deny", "view-script"],
     name: request.name,
     argsPreview: request.argsPreview,
     generated: request.generated,
@@ -121,4 +128,36 @@ function permissionMetadataFor(request: WorkflowPermissionRequest): Record<strin
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function present(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(present);
+  if (isUltracodeResult(value)) {
+    return {
+      ...value,
+      display: projectUltracodeDisplay(value),
+    };
+  }
+  if (!isRunLike(value)) return value;
+  return {
+    ...value,
+    display: projectWorkflowDisplay(value, []),
+  };
+}
+
+function isRunLike(value: unknown): value is WorkflowRun {
+  return isRecord(value) && typeof value.runId === "string" && typeof value.name === "string" && typeof value.status === "string";
+}
+
+function isUltracodeResult(value: unknown): value is UltracodeResult {
+  return isRecord(value) &&
+    typeof value.ultracode === "boolean" &&
+    typeof value.standingOptIn === "boolean" &&
+    typeof value.keywordTriggerEnabled === "boolean" &&
+    isRecord(value.effort) &&
+    typeof value.path === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -1,11 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentJournalEntry, AgentTranscript, WorkflowArgs, WorkflowArtifacts, WorkflowEvent, WorkflowRun } from "./domain";
+import type { AgentJournalEntry, AgentTranscript, WorkflowArgs, WorkflowArtifacts, WorkflowEvent, WorkflowRun, WorkflowRunSnapshot, WorkflowStore } from "./domain";
 import { stringifyError } from "./errors";
 
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
 export type FileStore = ReturnType<typeof createFileStore>;
+type RunSnapshotStore = Pick<WorkflowStore, "eventsFor"> & {
+  getRun: (runId: string) => WorkflowRun;
+};
+type RunListSnapshotStore = Pick<WorkflowStore, "eventsFor"> & {
+  listRuns: () => WorkflowRun[];
+};
+
+export function workflowRunSnapshot(store: RunSnapshotStore, runId: string): WorkflowRunSnapshot {
+  const run = store.getRun(runId);
+  return { run, events: store.eventsFor(run.runId) };
+}
+
+export function workflowRunSnapshots(store: RunListSnapshotStore): WorkflowRunSnapshot[] {
+  return store.listRuns().map((run) => ({ run, events: store.eventsFor(run.runId) }));
+}
 
 export function createMemoryStore() {
   const runs = new Map<string, WorkflowRun>();

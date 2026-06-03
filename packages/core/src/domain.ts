@@ -14,6 +14,11 @@ export type WorkflowRun = {
   error?: string;
 };
 
+export type WorkflowRunSnapshot = {
+  run: WorkflowRun;
+  events: WorkflowEvent[];
+};
+
 export type WorkflowArtifacts = {
   root: string;
   runJson: string;
@@ -121,6 +126,78 @@ export type WorkflowProgress = {
   warnings: string[];
   recentEvents: WorkflowEvent[];
   longestRunningAgent?: WorkflowRunningAgentProgress | undefined;
+};
+
+export type WorkflowDisplayActionId = "stop" | "resume" | "save";
+
+export type WorkflowDisplayAction = {
+  id: WorkflowDisplayActionId;
+  label: string;
+  enabled: boolean;
+};
+
+export type UltracodeDisplayActionId = "enable" | "disable" | "inspect-config";
+
+export type UltracodeDisplayAction = {
+  id: UltracodeDisplayActionId;
+  label: string;
+  enabled: boolean;
+};
+
+export type UltracodeDisplay = {
+  title: "Ultracode";
+  status: "enabled" | "disabled";
+  summary: string;
+  path: string;
+  warnings: string[];
+  actions: UltracodeDisplayAction[];
+};
+
+export type WorkflowAgentDisplayStatus = "running" | "completed" | "failed" | "cached";
+
+export type WorkflowAgentDisplay = {
+  id: string;
+  key: string;
+  index?: number | undefined;
+  phase: string;
+  label?: string | undefined;
+  agentType?: string | undefined;
+  status: WorkflowAgentDisplayStatus;
+  prompt?: string | undefined;
+  model?: string | undefined;
+  requestedModel?: string | undefined;
+  tokens: number;
+  transcriptPath?: string | undefined;
+  resultPreview?: string | undefined;
+  error?: string | undefined;
+};
+
+export type WorkflowPhaseDisplay = {
+  id: string;
+  title: string;
+  kind?: string | undefined;
+  summary: string;
+  agentTotal: number;
+  agentDone: number;
+  agentRunning: number;
+  agentFailed: number;
+  agentCached: number;
+  tokenTotal: number;
+  agents: WorkflowAgentDisplay[];
+};
+
+export type WorkflowRunDisplay = {
+  runId: string;
+  title: string;
+  status: RunStatus;
+  summary: string;
+  elapsedMs: number;
+  tokenTotal: number;
+  warnings: string[];
+  actions: WorkflowDisplayAction[];
+  phases: WorkflowPhaseDisplay[];
+  recentEvents: WorkflowEvent[];
+  artifacts?: WorkflowArtifacts | undefined;
 };
 
 export type WorkflowScript = (context: WorkflowContext) => unknown | Promise<unknown>;
