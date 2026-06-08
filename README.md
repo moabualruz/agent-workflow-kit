@@ -251,6 +251,8 @@ Common flags:
 | `--stop-on-estimated-token-limit` | Stop the run when the estimated-token limit is exceeded instead of only recording a limit event |
 | `--tree` | Render `workflow-status` as a phase/agent tree |
 | `--watch` | Refresh read-only workflow views (`workflows`, `workflow-status`, `workflow-events`) until interrupted |
+| `--real-agents` | Run REAL agents: shell each `agent()` call to `claude -p` (default / `agentType:"claude"`) or `codex exec` (`agentType:"codex"`), capturing stdout as the result (schema calls instruct the model to emit JSON and parse it). Omit the flag to keep the default control-flow stub (`schemaDefaultAgent`) for plan-only / dry runs that must not spawn agents |
+| `--agent-timeout-ms <n>` | Bounded per-`agent()` timeout when `--real-agents` is set (default 600000) |
 | `--json` | Print machine-readable output |
 
 ## Model Alias Policy
