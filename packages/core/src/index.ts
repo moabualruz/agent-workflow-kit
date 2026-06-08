@@ -1,3 +1,4 @@
+export * from "./cli-agent-executor";
 export * from "./command-catalog";
 export * from "./command-service";
 export * from "./config";

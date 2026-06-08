@@ -2,6 +2,7 @@
 
 import {
   createAliasModelPolicy,
+  createCliAgentExecutor,
   createWorkflowCommandService,
   dispatchWorkflowCommand,
   findWorkflowCommandSpec,
@@ -38,6 +39,8 @@ type ParsedArgs = {
   stopOnEstimatedTokenLimit: boolean;
   tree: boolean;
   watch: boolean;
+  realAgents: boolean;
+  agentTimeoutMs?: number | undefined;
 };
 
 main(process.argv.slice(2)).catch((error) => {
@@ -49,6 +52,12 @@ async function main(argv: string[]) {
   const args = parseArgs(argv);
   const service = createWorkflowCommandService({
     projectRoot: args.projectRoot,
+    // Default (no --real-agents): omit `agent`, so the command service falls back to schemaDefaultAgent (the
+    // legacy stub behavior), preserved for control-flow/plan-only runs that must not spawn real agents.
+    // With --real-agents: shell to `claude -p` / `codex exec` per agentType (workflow-defect #508 fix).
+    ...(args.realAgents
+      ? { agent: createCliAgentExecutor({ ...(args.agentTimeoutMs !== undefined ? { timeoutMs: args.agentTimeoutMs } : {}) }) }
+      : {}),
     modelPolicy: createAliasModelPolicy(args.modelAliases),
     permissionPolicy: permissionPolicyFor(args.permissionMode),
     sessionModel: args.sessionModel,
@@ -95,6 +104,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   let stopOnEstimatedTokenLimit = false;
   let tree = false;
   let watch = false;
+  let realAgents = false;
+  let agentTimeoutMs: number | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -125,6 +136,19 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--disable-workflows") {
       disableWorkflows = true;
+      continue;
+    }
+
+    if (arg === "--real-agents") {
+      realAgents = true;
+      continue;
+    }
+
+    if (arg === "--agent-timeout-ms") {
+      const value = argv[index + 1];
+      if (!value) throw new Error("--agent-timeout-ms requires a value");
+      agentTimeoutMs = parsePositiveInteger(value, "--agent-timeout-ms");
+      index += 1;
       continue;
     }
 
@@ -226,7 +250,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch };
+  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, realAgents, agentTimeoutMs };
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
