@@ -720,7 +720,7 @@ export default async function ({ agent }) {
     expect(result.stderr).toContain("--agent-timeout-ms requires --real-agents");
   });
 
-  test("--agent-timeout-ms fails fast even when it precedes --real-agents is absent and flag order varies", async () => {
+  test("throws when --agent-timeout-ms is set but --real-agents is absent, regardless of flag order", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
     // Timeout flag before the command, still no --real-agents: the after-loop guard must catch it regardless of order.
