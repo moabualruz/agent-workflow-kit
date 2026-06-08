@@ -11,7 +11,7 @@ import {
 type Captured = { command: CliCommand; prompt: string; timeoutMs: number };
 
 function fakeRunner(result: CliCommandResult, sink?: Captured[]): RunCommand {
-  return (command, prompt, timeoutMs) => {
+  return async (command, prompt, timeoutMs) => {
     sink?.push({ command, prompt, timeoutMs });
     return result;
   };
@@ -94,7 +94,7 @@ describe("createCliAgentExecutor", () => {
     let spawned = false;
     const agent = createCliAgentExecutor({
       dryRun: true,
-      runCommand: () => {
+      runCommand: async () => {
         spawned = true;
         return { status: 0, stdout: "", stderr: "" };
       },
@@ -117,6 +117,51 @@ describe("createCliAgentExecutor", () => {
     await agent("hi");
 
     expect(captured[0]?.timeoutMs).toBe(12345);
+  });
+
+  test("awaits an async runner before reading its result", async () => {
+    // A runner that resolves asynchronously must be awaited; otherwise reading result.status off a pending
+    // Promise would throw or misbehave. This guards the spawnSync -> async spawn refactor.
+    const slowRunner: RunCommand = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { status: 0, stdout: "deferred output", stderr: "" };
+    };
+    const agent = createCliAgentExecutor({ runCommand: slowRunner });
+
+    const result = await agent("do the thing");
+
+    expect(result).toBe("deferred output");
+  });
+
+  test("runs concurrent agent() calls without serializing on each other", async () => {
+    // The async runner must not block the event loop: two calls dispatched together should be in flight at the
+    // same time. We assert peak concurrency reached 2, which a synchronous spawnSync runner could never do.
+    let active = 0;
+    let peak = 0;
+    const concurrentRunner: RunCommand = async (_command, prompt) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      // Yield so both calls overlap before either resolves.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return { status: 0, stdout: prompt, stderr: "" };
+    };
+    const agent = createCliAgentExecutor({ runCommand: concurrentRunner });
+
+    const [a, b] = await Promise.all([agent("branch-a"), agent("branch-b")]);
+
+    expect(a).toBe("branch-a");
+    expect(b).toBe("branch-b");
+    expect(peak).toBe(2);
+  });
+
+  test("propagates a rejected runner (e.g. timeout or missing binary) as a thrown error", async () => {
+    const failingRunner: RunCommand = async () => {
+      throw new Error("cli-agent-executor: claude timed out after 1000ms");
+    };
+    const agent = createCliAgentExecutor({ runCommand: failingRunner });
+
+    await expect(agent("anything")).rejects.toThrow(/timed out after 1000ms/);
   });
 });
 
@@ -141,5 +186,27 @@ describe("extractJson", () => {
 
   test("returns the trimmed raw text when no JSON is present", () => {
     expect(extractJson("  no json here  ")).toBe("no json here");
+  });
+
+  test("skips an earlier non-JSON brace span and returns valid JSON appearing later", () => {
+    // The first balanced {...} is a prose fragment / pseudo-code that does not parse; the real result follows
+    // after a fence. A first-span-only scan would abort and return raw text; the multi-span scan must find it.
+    const stdout = [
+      "Plan: I will return an object like { key: value } with the verdict.",
+      "```json",
+      '{ "verdict": "pass", "score": 9 }',
+      "```",
+    ].join("\n");
+    expect(extractJson(stdout)).toEqual({ verdict: "pass", score: 9 });
+  });
+
+  test("skips an earlier non-JSON array span and returns a valid array later", () => {
+    const stdout = 'first try [a, b, c] then the real one: ["x","y"]';
+    expect(extractJson(stdout)).toEqual(["x", "y"]);
+  });
+
+  test("returns the FIRST parseable span when multiple valid JSON spans appear", () => {
+    const stdout = 'leading {"first":1} trailing {"second":2}';
+    expect(extractJson(stdout)).toEqual({ first: 1 });
   });
 });

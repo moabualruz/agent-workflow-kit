@@ -411,7 +411,7 @@ export default function ({ phase, log }) {
     const resumed = await runCli(["workflow-resume", run.runId, "--project-root", projectRoot, "--json"]);
 
     expect(stopped.exitCode).toBe(0);
-    // Stopping an already-completed run is a no-op — its terminal result is not
+    // Stopping an already-completed run is a no-op: its terminal result is not
     // downgraded to "stopped".
     expect(JSON.parse(stopped.stdout)).toEqual(expect.objectContaining({ runId: run.runId, status: "completed" }));
 
@@ -432,7 +432,7 @@ export default function ({ phase, log }) {
   test("resume re-runs a path-launched workflow by its recorded scriptPath", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);
-    // A script OUTSIDE the four name-search directories — only the recorded
+    // A script OUTSIDE the four name-search directories: only the recorded
     // scriptPath can resolve it on resume.
     const scriptPath = join(projectRoot, "outside-dir.js");
     writeFileSync(scriptPath, `
@@ -710,6 +710,23 @@ export default async function ({ agent }) {
     const result = await runCli(["workflow-run", "no-write-probe", "--token-budget", "nope", "--project-root", projectRoot, "--json"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("--token-budget requires a positive number");
+  });
+
+  test("--agent-timeout-ms fails fast without --real-agents", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const result = await runCli(["workflow-run", "no-write-probe", "--agent-timeout-ms", "1000", "--project-root", projectRoot, "--json"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--agent-timeout-ms requires --real-agents");
+  });
+
+  test("--agent-timeout-ms fails fast even when it precedes --real-agents is absent and flag order varies", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    // Timeout flag before the command, still no --real-agents: the after-loop guard must catch it regardless of order.
+    const result = await runCli(["--agent-timeout-ms", "2000", "workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--agent-timeout-ms requires --real-agents");
   });
 });
 

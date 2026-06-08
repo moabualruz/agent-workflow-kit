@@ -250,6 +250,13 @@ function parseArgs(argv: string[]): ParsedArgs {
     positional.push(arg);
   }
 
+  // Fail fast: a timeout without --real-agents is a no-op (the stub path never spawns a child), so silently
+  // ignoring it would let a user believe a timeout is active when it is not. Checked after the loop so it holds
+  // regardless of the order the two flags appear in argv.
+  if (agentTimeoutMs !== undefined && !realAgents) {
+    throw new Error("--agent-timeout-ms requires --real-agents");
+  }
+
   return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, realAgents, agentTimeoutMs };
 }
 
