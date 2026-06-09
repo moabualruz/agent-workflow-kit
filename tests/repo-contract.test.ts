@@ -6,7 +6,7 @@ import { workflowCommandNames } from "../packages/core/src/index";
 const repoRoot = new URL("..", import.meta.url).pathname;
 
 describe("standalone repository contract", () => {
-  test("ships one implementation pack per non-Claude CLI", () => {
+  test("ships one implementation pack per implementation harness", () => {
     for (const dir of [
       "plugins/codex-workflow-kit",
       "plugins/gemini-workflow-kit",
@@ -20,10 +20,40 @@ describe("standalone repository contract", () => {
     }
   });
 
-  test("keeps Claude as reference-only because Claude has native Workflows", () => {
-    expect(existsSync(join(repoRoot, "plugins/claude-workflow-kit"))).toBe(false);
-    expect(existsSync(join(repoRoot, "reference/claude-workflows/README.md"))).toBe(true);
-    expect(existsSync(join(repoRoot, "reference/claude-workflows/no-write-probe.js"))).toBe(true);
+  test("keeps native-reference harnesses reference-only", () => {
+    const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+    const harnesses = [
+      {
+        name: "Claude Code",
+        pluginDirs: ["plugins/claude-workflow-kit"],
+        referenceReadme: "reference/claude-workflows/README.md",
+        requiredReferenceText: "Claude Code already ships native Workflows.",
+        requiredFiles: ["reference/claude-workflows/no-write-probe.js"],
+      },
+      {
+        name: "Hermes Agent",
+        pluginDirs: ["plugins/hermes-workflow-kit", "plugins/hermes-agent-workflow-kit"],
+        referenceReadme: "reference/hermes-agent-workflows/README.md",
+        requiredReferenceText: "Hermes Agent already ships native orchestration support.",
+        requiredFiles: [],
+      },
+    ];
+
+    for (const harness of harnesses) {
+      expect(readme).toContain(`| ${harness.name} | Native reference only |`);
+
+      for (const dir of harness.pluginDirs) {
+        expect(existsSync(join(repoRoot, dir)), dir).toBe(false);
+      }
+
+      const referencePath = join(repoRoot, harness.referenceReadme);
+      expect(existsSync(referencePath), harness.referenceReadme).toBe(true);
+      expect(readFileSync(referencePath, "utf8")).toContain(harness.requiredReferenceText);
+
+      for (const file of harness.requiredFiles) {
+        expect(existsSync(join(repoRoot, file)), file).toBe(true);
+      }
+    }
   });
 
   test("Codex plugin has marketplace and plugin manifests", () => {
@@ -123,7 +153,7 @@ describe("standalone repository contract", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("non-Claude command shims point at the shared CLI instead of placeholder prose", () => {
+  test("implementation harness command shims point at the shared CLI instead of placeholder prose", () => {
     const commandFiles = [
       "plugins/codex-workflow-kit/skills/workflow-kit/SKILL.md",
       "plugins/gemini-workflow-kit/commands/workflow-run.toml",

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { installSmokeTargets } from "../scripts/install-smoke";
 
 describe("install smoke contract", () => {
-  test("covers every non-Claude harness with isolated install state", () => {
+  test("covers every implementation harness with isolated install state", () => {
     expect(installSmokeTargets.map((target) => target.harness)).toEqual([
       "codex",
       "gemini",
