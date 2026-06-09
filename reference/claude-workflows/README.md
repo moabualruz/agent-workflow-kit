@@ -11,4 +11,4 @@ Reference responsibilities:
 - avoid custom Claude runtime, plugin, or command shims
 - preserve native `/workflows`, `/deep-research`, saved workflows, stop, and resume behavior
 
-All implementation work belongs in non-Claude harness packs.
+All implementation work belongs in non-native-reference harness packs.

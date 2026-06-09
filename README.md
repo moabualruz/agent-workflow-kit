@@ -6,7 +6,7 @@
 
 Claude Workflows-style orchestration for agent CLIs that do not have native workflow support.
 
-Agent Workflow Kit gives Codex, Gemini CLI, OpenCode, Grok Build, Pi, and Antigravity a shared workflow command set while leaving Claude Code on its native Workflows implementation. It is a standalone open-source toolkit: one TypeScript core, one CLI, and thin harness-native plugin, extension, skill, or command packs.
+Agent Workflow Kit gives Codex, Gemini CLI, OpenCode, Grok Build, Pi, and Antigravity a shared workflow command set while leaving Claude Code on native Workflows and Hermes Agent on native orchestration surfaces. It is a standalone open-source toolkit: one TypeScript core, one CLI, and thin harness-native plugin, extension, skill, or command packs.
 
 ## Why Use It
 
@@ -21,6 +21,7 @@ Agent Workflow Kit gives Codex, Gemini CLI, OpenCode, Grok Build, Pi, and Antigr
 | Harness | Pack | Surface | Auto-invoke? |
 |---|---|---|---|
 | Claude Code | Native reference only | Uses Claude Code Workflows directly; no replacement plugin is shipped | Native |
+| Hermes Agent | Native reference only | Uses Hermes Agent native orchestration directly; no replacement plugin is shipped | Native |
 | Codex | `plugins/codex-workflow-kit` | Skill that calls the shared CLI | Yes (skill) |
 | Gemini CLI | `plugins/gemini-workflow-kit` | Command files | No (manual) |
 | OpenCode | `plugins/opencode-workflow-kit` | Native plugin + command files | Yes (plugin tools) / manual (commands) |
@@ -56,7 +57,7 @@ pi install "$PWD/plugins/pi-workflow-kit"
 agy plugin install plugins/antigravity-workflow-kit
 ```
 
-Claude Code needs no install from this repo. It already owns native Workflows, and this project treats Claude behavior as the compatibility target.
+Claude Code and Hermes Agent need no install from this repo. Claude Code already owns native Workflows, and Hermes Agent already owns native orchestration surfaces; this project treats their behavior as reference targets.
 
 ## Two Install Paths: Commands vs Skills
 
@@ -69,10 +70,12 @@ Both paths call the same CLI and produce identical runs; the only difference is 
 
 ### Harness UX Reality
 
-The shared workflow UX is intentionally CLI-first and file-backed. Every harness can call the same command set and inspect the same run artifacts; only hosts with native extension APIs can render or approve more than that.
+The shared workflow UX is intentionally CLI-first and file-backed. Every implementation harness can call the same command set and inspect the same run artifacts; only hosts with native extension APIs can render or approve more than that. Native-reference harnesses keep their own workflow UX.
 
 | Harness | Current UX |
 |---|---|
+| Claude Code | Native Claude Code Workflows; reference only, with no Agent Workflow Kit replacement pack |
+| Hermes Agent | Native Hermes Agent orchestration via `delegate_task`, Kanban, cron, `/background`, and skills; reference only, with no Agent Workflow Kit replacement pack |
 | Codex | Skill-driven CLI calls; inspect the shared progress tree with `workflow-status --tree` or the live run table with `workflows --watch` |
 | Gemini CLI | Command-file CLI calls; reload/install behavior is owned by Gemini; shared docs point to `workflows --watch` and `workflow-status --tree` |
 | OpenCode | Native plugin tools plus command files; dynamic workflow execution asks OpenCode permission `agent-workflow-kit.workflow` with approval-title, cost-caution, once/always/deny/view-script actions, and display summaries on run output |
