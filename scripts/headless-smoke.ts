@@ -57,6 +57,9 @@ export type ValidatedHeadlessWorkflow = {
 // Refreshed against the live OpenCode Zen catalog (https://opencode.ai/zen/v1/models) on
 // 2026-06-09: deepseek-v4-pro was removed from Zen, and the logical tier vocabulary gained
 // `fable` (the frontier tier above `opus`). Zen-only, subscription-allowed, and free models.
+// Note: the catalog's `id` field carries bare ids (kimi-k2.6, glm-5.1, qwen3.6-plus,
+// deepseek-v4-flash-free); the `opencode-go/` and `opencode/` prefixes below are the
+// provider-prefixed form Pi/OpenCode configs consume, not the catalog id itself.
 export const approvedModelAliasMaps = {
   opencode: {
     fable: "opencode-go/kimi-k2.6",
