@@ -244,7 +244,7 @@ Common flags:
 | `--permission-mode <mode>` | One of `default`, `acceptEdits`, `plan`, `bypassPermissions`, or `dontAsk` (unknown values error with the allowed list). `plan`/`dontAsk` deny dynamic execution (fail closed); `default`/`acceptEdits`/`bypassPermissions` allow it |
 | `--disable-workflows` | Disable dynamic workflow execution for this CLI session |
 | `--resume-from-run-id <run-id>` | Run `workflow-run` through the same invocation path while replaying the prior run journal |
-| `--model-alias alias=provider/model` | Resolve Claude-style aliases such as `opus`, `sonnet`, or `haiku` |
+| `--model-alias alias=provider/model` | Resolve Claude-style aliases such as `fable`, `opus`, `sonnet`, or `haiku` |
 | `--session-model <model>` | Model inherited by `agent()` calls that omit `opts.model` |
 | `--token-budget <n>` | Informational output-token target readable via `budget.*` (not enforced) |
 | `--max-agent-calls <n>` | Fail closed when a run would exceed the explicit agent call limit |
@@ -260,10 +260,11 @@ Common flags:
 
 ## Model Alias Policy
 
-The core keeps `requestedModel` and resolved `model` in workflow events. Aliases can be provided per command:
+The core keeps `requestedModel` and resolved `model` in workflow events. The logical tier vocabulary is `fable | opus | sonnet | haiku`; `fable` is the frontier tier above `opus` (Claude Fable 5 in Claude Code). Aliases can be provided per command:
 
 ```sh
 agent-workflow-kit workflow-run release-check \
+  --model-alias fable=opencode-go/kimi-k2.6 \
   --model-alias sonnet=opencode-go/qwen3.6-plus \
   --model-alias haiku=opencode/deepseek-v4-flash-free \
   --json
@@ -272,17 +273,22 @@ agent-workflow-kit workflow-run release-check \
 Or through the environment:
 
 ```sh
-export AGENT_WORKFLOW_KIT_MODEL_ALIASES="sonnet=opencode-go/qwen3.6-plus,haiku=opencode/deepseek-v4-flash-free"
+export AGENT_WORKFLOW_KIT_MODEL_ALIASES="fable=opencode-go/kimi-k2.6,sonnet=opencode-go/qwen3.6-plus,haiku=opencode/deepseek-v4-flash-free"
 ```
 
-Smoke-test defaults:
+Recommended per-harness alias maps (refreshed 2026-06-09; re-verify before pinning, catalogs churn):
 
-| Harness | `opus` | `sonnet` | `haiku` |
-|---|---|---|---|
-| OpenCode | `opencode-go/deepseek-v4-pro` | `opencode-go/qwen3.6-plus` | `opencode/deepseek-v4-flash-free` |
-| Pi | `opencode-go/deepseek-v4-pro` | `opencode-go/qwen3.6-plus` | `opencode/deepseek-v4-flash-free` |
+| Harness | `fable` | `opus` | `sonnet` | `haiku` |
+|---|---|---|---|---|
+| Claude Code (native reference) | `claude-fable-5` | `claude-opus-4-8` | `claude-sonnet-4-6` | `claude-haiku-4-5` |
+| Codex | `gpt-5.5` (effort xhigh) | `gpt-5.5` (effort high) | `gpt-5.4` | `gpt-5.4-mini` |
+| Gemini CLI | `gemini-3.1-pro-preview` | `gemini-3.1-pro-preview` | `gemini-3.5-flash` | `gemini-3.1-flash-lite` |
+| OpenCode (Zen) | `opencode-go/kimi-k2.6` | `opencode-go/glm-5.1` | `opencode-go/qwen3.6-plus` | `opencode/deepseek-v4-flash-free` |
+| Pi | `opencode-go/kimi-k2.6` | `opencode-go/glm-5.1` | `opencode-go/qwen3.6-plus` | `opencode/deepseek-v4-flash-free` |
+| Grok Build | `grok-build` | `grok-build` | `grok-composer-2.5-fast` | `grok-composer-2.5-fast` |
+| Antigravity | `gemini-3.1-pro` | `gemini-3.1-pro` | `gemini-3.5-flash` | `gemini-3.5-flash` |
 
-Pi may use OpenCode or Grok models as fallback candidates when needed. OpenCode defaults stay limited to OpenCode Zen/OpenCode Go, subscription-allowed, and free models.
+Claude Code and Hermes Agent are native-reference harnesses: they resolve the tier aliases themselves, so no env mapping is needed there. Smoke-test defaults (`approvedModelAliasMaps` in `scripts/headless-smoke.ts`) use the OpenCode/Pi rows above. Pi may use OpenCode or Grok models as fallback candidates when needed. OpenCode defaults stay limited to OpenCode Zen/OpenCode Go, subscription-allowed, and free models. `deepseek-v4-pro` was removed from the Zen catalog in June 2026 and must not be pinned; `nemotron-3-super-free` was superseded by `nemotron-3-ultra-free`.
 
 ## Persistence And Artifacts
 

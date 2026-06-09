@@ -54,21 +54,27 @@ export type ValidatedHeadlessWorkflow = {
   };
 };
 
+// Refreshed against the live OpenCode Zen catalog (https://opencode.ai/zen/v1/models) on
+// 2026-06-09: deepseek-v4-pro was removed from Zen, and the logical tier vocabulary gained
+// `fable` (the frontier tier above `opus`). Zen-only, subscription-allowed, and free models.
 export const approvedModelAliasMaps = {
   opencode: {
-    opus: "opencode-go/deepseek-v4-pro",
+    fable: "opencode-go/kimi-k2.6",
+    opus: "opencode-go/glm-5.1",
     sonnet: "opencode-go/qwen3.6-plus",
     haiku: "opencode/deepseek-v4-flash-free",
   },
   pi: {
-    opus: "opencode-go/deepseek-v4-pro",
+    fable: "opencode-go/kimi-k2.6",
+    opus: "opencode-go/glm-5.1",
     sonnet: "opencode-go/qwen3.6-plus",
     haiku: "opencode/deepseek-v4-flash-free",
   },
 } as const;
 
 export const approvedPiFallbackModels = [
-  "opencode-go/deepseek-v4-pro",
+  "opencode-go/kimi-k2.6",
+  "opencode-go/glm-5.1",
   "opencode-go/qwen3.6-plus",
   "opencode-go/deepseek-v4-flash",
   "opencode/grok-build-0.1",

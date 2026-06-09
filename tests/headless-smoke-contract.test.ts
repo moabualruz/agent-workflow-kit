@@ -34,22 +34,28 @@ describe("headless smoke contract", () => {
 
   test("uses approved OpenCode/Pi model families instead of Claude-family models", () => {
     expect(approvedModelAliasMaps.opencode).toEqual({
-      opus: "opencode-go/deepseek-v4-pro",
+      fable: "opencode-go/kimi-k2.6",
+      opus: "opencode-go/glm-5.1",
       sonnet: "opencode-go/qwen3.6-plus",
       haiku: "opencode/deepseek-v4-flash-free",
     });
     expect(approvedModelAliasMaps.pi).toEqual({
-      opus: "opencode-go/deepseek-v4-pro",
+      fable: "opencode-go/kimi-k2.6",
+      opus: "opencode-go/glm-5.1",
       sonnet: "opencode-go/qwen3.6-plus",
       haiku: "opencode/deepseek-v4-flash-free",
     });
 
     const serializedMaps = JSON.stringify(approvedModelAliasMaps);
+    expect(serializedMaps).not.toContain("claude-fable");
     expect(serializedMaps).not.toContain("claude-opus");
     expect(serializedMaps).not.toContain("claude-sonnet");
     expect(serializedMaps).not.toContain("claude-haiku");
+    // deepseek-v4-pro was removed from the Zen catalog 2026-06; it must not reappear.
+    expect(serializedMaps).not.toContain("deepseek-v4-pro");
     expect(approvedPiFallbackModels).toEqual([
-      "opencode-go/deepseek-v4-pro",
+      "opencode-go/kimi-k2.6",
+      "opencode-go/glm-5.1",
       "opencode-go/qwen3.6-plus",
       "opencode-go/deepseek-v4-flash",
       "opencode/grok-build-0.1",
