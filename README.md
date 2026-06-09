@@ -70,7 +70,7 @@ Both paths call the same CLI and produce identical runs; the only difference is 
 
 ### Harness UX Reality
 
-The shared workflow UX is intentionally CLI-first and file-backed. Every implementation harness can call the same command set and inspect the same run artifacts; only hosts with native extension APIs can render or approve more than that. Native-reference harnesses keep their own workflow UX.
+The shared workflow UX is intentionally CLI-first and file-backed: workflows run through command-line calls, and state/run artifacts persist to disk. Every implementation harness can call the same command set and inspect the same run artifacts; only hosts with native extension APIs can render or approve more than that. Native-reference harnesses keep their own workflow UX.
 
 | Harness | Current UX |
 |---|---|
