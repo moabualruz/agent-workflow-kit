@@ -19,5 +19,5 @@ Authoring and running a workflow spins up many subagents and spends real tokens.
 
 **Ultracode** has three separate meanings in this kit. The standing opt-in is the persisted project behavior (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) that author-runs a workflow for substantive tasks by default. The keyword trigger is recorded separately as `ultracodeKeywordTriggerEnabled` and is disabled when workflows are disabled. Model effort is host-owned: this standalone CLI reports model effort as unsupported and records `ultracodeEffortMode: "orchestration-only"` when orchestration is enabled. Turn ultracode on only when the user asks; when off, revert to the opt-in gate.
 
-For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
+For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-run --stream`, `workflow-events --follow`, or `workflow-status --tree` between phases rather than one giant run.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->

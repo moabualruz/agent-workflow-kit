@@ -13,9 +13,11 @@ CLI fallback:
 agent-workflow-kit workflow "<task>" --json
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-run <workflow> --args-json '{"key":"value"}' --json
+agent-workflow-kit workflow-run <workflow> --stream --json
 agent-workflow-kit workflow-status <run-id> --json
 agent-workflow-kit workflow-status <run-id> --tree
 agent-workflow-kit workflow-events <run-id> --json
+agent-workflow-kit workflow-events <run-id> --follow
 agent-workflow-kit workflow-resume <run-id> --json
 agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
@@ -28,6 +30,8 @@ agent-workflow-kit ultracode status --json
 
 Saved workflow scripts read structured args from `context.args`.
 Generated workflow runs return `args.workflow.name` and `args.workflow.path` for later `workflow-run`.
+Use `workflow-run --stream --json` for long launches: event lines go to stderr and the final run JSON stays on stdout.
+Use `workflow-events --follow` for an existing run id instead of repeatedly polling.
 
 Executable smoke:
 
@@ -55,5 +59,5 @@ Authoring and running a workflow spins up many subagents and spends real tokens.
 
 **Ultracode** has three separate meanings in this kit. The standing opt-in is the persisted project behavior (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) that author-runs a workflow for substantive tasks by default. The keyword trigger is recorded separately as `ultracodeKeywordTriggerEnabled` and is disabled when workflows are disabled. Model effort is host-owned: this standalone CLI reports model effort as unsupported and records `ultracodeEffortMode: "orchestration-only"` when orchestration is enabled. Turn ultracode on only when the user asks; when off, revert to the opt-in gate.
 
-For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
+For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-run --stream`, `workflow-events --follow`, or `workflow-status --tree` between phases rather than one giant run.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->

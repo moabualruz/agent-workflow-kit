@@ -76,8 +76,8 @@ The shared workflow UX is intentionally CLI-first and file-backed: workflows run
 |---|---|
 | Claude Code | Native Claude Code Workflows; reference only, with no Agent Workflow Kit replacement pack |
 | Hermes Agent | Native Hermes Agent orchestration via `delegate_task`, Kanban, cron, `/background`, and skills; reference only, with no Agent Workflow Kit replacement pack |
-| Codex | Skill-driven CLI calls; inspect the shared progress tree with `workflow-status --tree` or the live run table with `workflows --watch` |
-| Gemini CLI | Command-file CLI calls; reload/install behavior is owned by Gemini; shared docs point to `workflows --watch` and `workflow-status --tree` |
+| Codex | Skill-driven CLI calls; stream launches with `workflow-run --stream` and inspect trees with `workflow-status --tree` |
+| Gemini CLI | Command-file CLI calls; reload/install behavior is owned by Gemini; shared docs point to `workflow-run --stream`, `workflow-events --follow`, and `workflow-status --tree` |
 | OpenCode | Native plugin tools plus command files; dynamic workflow execution asks OpenCode permission `agent-workflow-kit.workflow` with approval-title, cost-caution, once/always/deny/view-script actions, and display summaries on run output |
 | Grok Build | Skill and command-file CLI calls; inspect progress with the shared watch/table/tree CLI |
 | Pi | Registered commands/tools plus a skill; tool calls return structured details plus a host-renderable workflow display summary |
@@ -97,6 +97,7 @@ The generated workflow file is saved under `.agent-workflow-kit/workflows/` (its
 
 ```sh
 agent-workflow-kit workflow-run review-the-pull-request-and-summarize-risks --json
+agent-workflow-kit workflow-run review-the-pull-request-and-summarize-risks --stream --json
 ```
 
 Run a hand-written workflow file with structured input:
@@ -113,10 +114,11 @@ Inspect the run:
 agent-workflow-kit workflow-status <run-id> --json
 agent-workflow-kit workflow-status <run-id> --tree
 agent-workflow-kit workflow-events <run-id>
+agent-workflow-kit workflow-events <run-id> --follow
 agent-workflow-kit workflows --watch
 ```
 
-Machine-readable run output includes `runId`, `name`, `status`, `args`, `result` or `error`, `artifacts.root`, `artifacts.runJson`, `artifacts.eventsJsonl`, and `artifacts.transcriptDir`. Human `workflow-status` output summarizes result/error, progress, `run.json`, and transcript location without dumping raw transcript text. `workflow-status --tree` renders phase and agent drilldown; `workflows --watch` refreshes the persisted run table until interrupted.
+Machine-readable run output includes `runId`, `name`, `status`, `args`, `result` or `error`, `artifacts.root`, `artifacts.runJson`, `artifacts.eventsJsonl`, and `artifacts.transcriptDir`. Human `workflow-status` output summarizes result/error, progress, `run.json`, and transcript location without dumping raw transcript text. `workflow-run --stream --json` follows file-backed events on stderr while keeping final stdout as one JSON object. `workflow-events --follow --json` emits JSONL events until terminal status. `workflow-status --tree` renders phase and agent drilldown; `workflows --watch` remains a snapshot refresh fallback. Commands that launch a run exit nonzero when terminal `status` is `failed`.
 
 ## Workflow File Shape
 
@@ -172,7 +174,7 @@ The runtime mirrors Claude Workflows so the same workflow body behaves the same 
 
 ### Background execution
 
-The runtime exposes `runDetached`, which returns the initial `running` handle immediately and executes the workflow in the background, writing the terminal status and a `run:notify` event to the store — pollable with `workflow-status` / `workflow-events`. This is meant for long-running host adapters that stay alive; a one-shot CLI process must remain alive for the background work to finish, so the CLI runs synchronously. A standalone CLI cannot inject a completion notification back into a live conversation or render the in-session `/workflows` progress tree — it matches the data model (phase groups, per-agent events, `log()` lines), not the host's live render.
+The runtime exposes `runDetached`, which returns the initial `running` handle immediately and executes the workflow in the background, writing the terminal status and a `run:notify` event to the store. `workflow-run --stream` uses that path and keeps the process alive while following `events.jsonl` and `run.json` with file notifications. Existing run ids can be followed with `workflow-events --follow`; snapshot inspection remains available through `workflow-status`, `workflow-events`, and `workflows --watch`. Long-running workflows should call `phase()` and `log()` before slow batches; the runtime also emits low-rate `agent:heartbeat` events while an agent call is still running.
 
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_START -->
 ## Ultracode & multi-phase orchestration
@@ -181,7 +183,7 @@ Authoring and running a workflow spins up many subagents and spends real tokens.
 
 **Ultracode** has three separate meanings in this kit. The standing opt-in is the persisted project behavior (`agent-workflow-kit ultracode on|off|status`, stored in `.agent-workflow-kit/config.json`) that author-runs a workflow for substantive tasks by default. The keyword trigger is recorded separately as `ultracodeKeywordTriggerEnabled` and is disabled when workflows are disabled. Model effort is host-owned: this standalone CLI reports model effort as unsupported and records `ultracodeEffortMode: "orchestration-only"` when orchestration is enabled. Turn ultracode on only when the user asks; when off, revert to the opt-in gate.
 
-For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-status` / `workflow-events` between phases rather than one giant run.
+For larger work, decompose into a **sequence** of workflows (understand -> design -> implement -> review), inspecting each run with `workflow-run --stream`, `workflow-events --follow`, or `workflow-status --tree` between phases rather than one giant run.
 <!-- AGENT_WORKFLOW_KIT_ULTRACODE_END -->
 
 Full guidance lives in [`docs/ultracode.md`](docs/ultracode.md).
@@ -203,7 +205,7 @@ Agent Workflow Kit tracks [Claude Code's dynamic workflows + ultracode](https://
 | Ultracode: standing opt-in, author-per-task, verify-until-converge | Explicit `ultracode` toggle drives the same behavior in skills | ✅ Behavior; toggle is explicit |
 | Concurrency cap `min(16, cores-2)`, 1000-agent lifetime cap | Host-owned by default; optional explicit runtime policy can fail closed with limit events | ⚠️ Configurable |
 | xhigh reasoning-effort signal | Host model setting; a CLI cannot set it | ⛔ Out of scope |
-| In-session live `/workflows` progress tree | CLI `workflows --watch` and `workflow-status --tree`; host-native panels remain adapter/API dependent | ⚠️ CLI matched |
+| In-session live `/workflows` progress tree | CLI `workflow-run --stream`, `workflow-events --follow`, and `workflow-status --tree`; host-native panels remain adapter/API dependent | ⚠️ CLI matched |
 | `<task-notification>` injected into a live turn | `run:notify` event on a detached run; harness polls | ⛔ Out of scope |
 
 Note on `budget`: Agent Workflow Kit keeps `budget.spent()` / `budget.remaining()` readable inside workflows. Host harnesses still own real provider limits by default; pass explicit CLI/runtime limits when you want local fail-closed policy.
@@ -226,9 +228,9 @@ Project files win over the personal fallback so repositories can keep determinis
 | Command | Purpose |
 |---|---|
 | `workflow "<task>"` | Generate a persistent workflow under `.agent-workflow-kit/workflows/` and run it |
-| `workflow-run <name-or-path>` | Execute a saved workflow name or direct JavaScript file path |
+| `workflow-run <name-or-path>` | Execute a saved workflow name or direct JavaScript file path; add `--stream` for live event output |
 | `workflow-status <run-id>` | Read the persisted run status and result; add `--tree` for phase/agent drilldown |
-| `workflow-events <run-id>` | Stream the append-like workflow event log |
+| `workflow-events <run-id>` | Read the append-like workflow event log; add `--follow` to stream new events until terminal status |
 | `workflow-resume <run-id>` | Re-run a workflow, replaying the unchanged agent prefix from its journal |
 | `workflow-stop <run-id>` | Cancel a workflow run, aborting it if still in flight |
 | `workflows` | List persisted workflow runs; add `--watch` for a refreshed run table |
@@ -244,6 +246,8 @@ Common flags:
 | `--permission-mode <mode>` | One of `default`, `acceptEdits`, `plan`, `bypassPermissions`, or `dontAsk` (unknown values error with the allowed list). `plan`/`dontAsk` deny dynamic execution (fail closed); `default`/`acceptEdits`/`bypassPermissions` allow it |
 | `--disable-workflows` | Disable dynamic workflow execution for this CLI session |
 | `--resume-from-run-id <run-id>` | Run `workflow-run` through the same invocation path while replaying the prior run journal |
+| `--stream` | Launch `workflow-run` detached, stream event lines, then print final run output |
+| `--follow` | Follow `workflow-events` with file notifications until terminal run status; with `--json`, prints JSONL |
 | `--model-alias alias=provider/model` | Resolve Claude-style aliases such as `fable`, `opus`, `sonnet`, or `haiku` |
 | `--session-model <model>` | Model inherited by `agent()` calls that omit `opts.model` |
 | `--token-budget <n>` | Informational output-token target readable via `budget.*` (not enforced) |
@@ -253,7 +257,7 @@ Common flags:
 | `--max-estimated-tokens <n>` | Track estimated output tokens against an explicit local limit |
 | `--stop-on-estimated-token-limit` | Stop the run when the estimated-token limit is exceeded instead of only recording a limit event |
 | `--tree` | Render `workflow-status` as a phase/agent tree |
-| `--watch` | Refresh read-only workflow views (`workflows`, `workflow-status`, `workflow-events`) until interrupted |
+| `--watch` | Refresh read-only workflow views (`workflows`, `workflow-status`, `workflow-events`) until interrupted; use `--follow` for event-driven workflow event streams |
 | `--real-agents` | Run REAL agents: shell each `agent()` call to `claude -p` (default / `agentType:"claude"`) or `codex exec` (`agentType:"codex"`), capturing stdout as the result (schema calls instruct the model to emit JSON and parse it). Omit the flag to keep the default control-flow stub (`schemaDefaultAgent`) for plan-only / dry runs that must not spawn agents |
 | `--agent-timeout-ms <n>` | Bounded per-`agent()` timeout when `--real-agents` is set (default 600000) |
 | `--json` | Print machine-readable output |

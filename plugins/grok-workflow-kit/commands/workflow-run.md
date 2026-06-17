@@ -5,8 +5,10 @@ Use plugin tools when available. CLI fallback:
 ```sh
 agent-workflow-kit workflow-run no-write-probe --json
 agent-workflow-kit workflow-run <workflow> --args-json '{"key":"value"}' --json
+agent-workflow-kit workflow-run <workflow> --stream --json
 agent-workflow-kit workflow-status <run-id> --json
 agent-workflow-kit workflow-events <run-id> --json
+agent-workflow-kit workflow-events <run-id> --follow
 agent-workflow-kit workflow-resume <run-id> --json
 agent-workflow-kit workflow-stop <run-id> --json
 agent-workflow-kit workflows --json
@@ -15,6 +17,8 @@ agent-workflow-kit ultracode status --json
 ```
 
 Saved workflow scripts read structured args from `context.args`.
+Use `workflow-run --stream --json` for long launches: event lines go to stderr and the final run JSON stays on stdout.
+Use `workflow-events --follow` for an existing run id instead of repeatedly polling.
 
 Executable smoke:
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { watch, type FSWatcher } from "node:fs";
 import {
   createAliasModelPolicy,
   createCliAgentExecutor,
@@ -15,10 +16,11 @@ import {
   permissionPolicyForMode,
   type WorkflowCatalogEntry,
   type WorkflowCommandService,
+  type WorkflowEvent,
   type WorkflowRun,
   workflowCommandNames,
 } from "@agent-workflow-kit/core";
-import { formatHuman, formatRunTree } from "./workflows-view";
+import { formatEventLine, formatHuman, formatRunTree } from "./workflows-view";
 
 type ParsedArgs = {
   command: string | undefined;
@@ -39,6 +41,8 @@ type ParsedArgs = {
   stopOnEstimatedTokenLimit: boolean;
   tree: boolean;
   watch: boolean;
+  follow: boolean;
+  stream: boolean;
   realAgents: boolean;
   agentTimeoutMs?: number | undefined;
 };
@@ -70,6 +74,14 @@ async function main(argv: string[]) {
   if (!spec) throw new Error(`Expected command: ${workflowCommandNames.join(", ")}`);
 
   const input = inputForCliCommand(spec, args);
+  if (args.follow) {
+    await followCommand(service, spec, input, args);
+    return;
+  }
+  if (args.stream) {
+    await streamWorkflowRun(service, spec, input, args);
+    return;
+  }
   if (!args.json && args.watch) {
     await watchCommand(service, spec, input, args);
     return;
@@ -83,6 +95,7 @@ async function main(argv: string[]) {
   }
 
   print(result, { json: args.json });
+  setExitCodeForRun(spec.name, result);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -104,6 +117,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   let stopOnEstimatedTokenLimit = false;
   let tree = false;
   let watch = false;
+  let follow = false;
+  let stream = false;
   let realAgents = false;
   let agentTimeoutMs: number | undefined;
 
@@ -131,6 +146,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--watch") {
       watch = true;
+      continue;
+    }
+
+    if (arg === "--follow") {
+      follow = true;
+      continue;
+    }
+
+    if (arg === "--stream") {
+      stream = true;
       continue;
     }
 
@@ -257,7 +282,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     throw new Error("--agent-timeout-ms requires --real-agents");
   }
 
-  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, realAgents, agentTimeoutMs };
+  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, follow, stream, realAgents, agentTimeoutMs };
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
@@ -340,6 +365,109 @@ function printTree(run: WorkflowRun, events: Parameters<typeof formatRunTree>[1]
   console.log(formatRunTree(run, events));
 }
 
+async function streamWorkflowRun(
+  service: WorkflowCommandService,
+  spec: WorkflowCatalogEntry,
+  input: Record<string, unknown>,
+  args: ParsedArgs,
+): Promise<void> {
+  if (spec.name !== "workflow-run") {
+    throw new Error("--stream only applies to workflow-run");
+  }
+
+  const launched = await dispatchWorkflowCommand(service, spec.name, { ...input, detach: true });
+  if (!isRunRecord(launched)) {
+    print(launched, { json: args.json });
+    return;
+  }
+
+  const stream = args.json ? process.stderr : process.stdout;
+  await followEvents(service, launched.runId, { json: false, output: stream });
+  const finalRun = service.getRun(launched.runId);
+  print(finalRun, { json: args.json });
+  setExitCodeForRun(spec.name, finalRun);
+}
+
+async function followCommand(
+  service: WorkflowCommandService,
+  spec: WorkflowCatalogEntry,
+  input: Record<string, unknown>,
+  args: ParsedArgs,
+): Promise<void> {
+  if (spec.name !== "workflow-events") {
+    throw new Error("--follow only applies to workflow-events");
+  }
+  const runId = typeof input.runId === "string" ? input.runId : "";
+  const run = await followEvents(service, runId, { json: args.json, output: process.stdout });
+  if (run.status === "failed") process.exitCode = 1;
+}
+
+type FollowOptions = {
+  json: boolean;
+  output: Pick<typeof process.stdout, "write">;
+};
+
+async function followEvents(
+  service: WorkflowCommandService,
+  runId: string,
+  options: FollowOptions,
+): Promise<WorkflowRun> {
+  let printed = 0;
+  const flush = (): WorkflowRun => {
+    const events = service.eventsFor(runId);
+    for (let index = printed; index < events.length; index += 1) {
+      writeEvent(events[index], options);
+    }
+    printed = events.length;
+    return service.getRun(runId);
+  };
+
+  let run = flush();
+  if (isTerminalStatus(run.status)) return run;
+  const watchRoot = run.artifacts?.root;
+  if (!watchRoot) throw new Error(`workflow-events cannot follow run without artifact root: ${runId}`);
+
+  return new Promise<WorkflowRun>((resolve, reject) => {
+    let watcher: FSWatcher | undefined;
+    let scheduled = false;
+    const close = () => watcher?.close();
+    const settle = (value: WorkflowRun) => {
+      close();
+      resolve(value);
+    };
+    const scheduleFlush = () => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        try {
+          run = flush();
+          if (isTerminalStatus(run.status)) settle(run);
+        } catch (error) {
+          close();
+          reject(error);
+        }
+      }, 10);
+    };
+
+    try {
+      watcher = watch(watchRoot, (_event, filename) => {
+        const changed = typeof filename === "string" ? filename : String(filename ?? "");
+        if (!changed || changed === "events.jsonl" || changed === "run.json") scheduleFlush();
+      });
+      scheduleFlush();
+    } catch (error) {
+      close();
+      reject(error);
+    }
+  });
+}
+
+function writeEvent(event: WorkflowEvent | undefined, options: FollowOptions): void {
+  if (!event) return;
+  options.output.write(`${options.json ? JSON.stringify(event) : formatEventLine(event)}\n`);
+}
+
 async function watchCommand(
   service: WorkflowCommandService,
   spec: WorkflowCatalogEntry,
@@ -403,6 +531,19 @@ function positiveEnvInteger(name: string): number | undefined {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setExitCodeForRun(command: string, value: unknown): void {
+  if (!isRunProducerCommand(command)) return;
+  if (isRunRecord(value) && value.status === "failed") process.exitCode = 1;
+}
+
+function isRunProducerCommand(command: string): boolean {
+  return command === "workflow" || command === "workflow-run" || command === "workflow-resume" || command === "deep-research";
+}
+
+function isTerminalStatus(status: string): boolean {
+  return status === "completed" || status === "failed" || status === "stopped";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

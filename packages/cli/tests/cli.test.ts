@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,7 +77,7 @@ describe("agent-workflow-kit cli", () => {
       "--json",
     ]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     const payload = JSON.parse(result.stdout);
     expect(payload).toEqual(expect.objectContaining({
       name: "no-write-probe",
@@ -186,7 +186,7 @@ export default function ({ args }) {
       AGENT_WORKFLOW_KIT_DISABLE_WORKFLOWS: "1",
     });
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({
       name: "no-write-probe",
       status: "failed",
@@ -207,7 +207,7 @@ export default function ({ args }) {
       "--json",
     ]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({
       name: "no-write-probe",
       status: "failed",
@@ -317,6 +317,82 @@ export default function ({ phase, log }) {
       expect.objectContaining({ runId: run.runId, type: "phase", title: "Probe" }),
       expect.objectContaining({ runId: run.runId, type: "run:completed" }),
     ]));
+  });
+
+  test("workflow-run --stream emits event lines without corrupting JSON stdout", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "stream-probe.js"), `
+export default async function ({ phase, log, agent }) {
+  phase("Streaming");
+  log("stream-step");
+  await agent("stream prompt", { label: "stream-agent" });
+  return { streamed: true };
+}
+`);
+
+    const result = await runCli(["workflow-run", "stream-probe", "--stream", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toEqual(expect.objectContaining({
+      name: "stream-probe",
+      status: "completed",
+      result: { streamed: true },
+    }));
+    expect(result.stderr).toContain("run:started");
+    expect(result.stderr).toContain("phase Streaming");
+    expect(result.stderr).toContain("log stream-step");
+    expect(result.stderr).toContain("agent:start");
+    expect(result.stderr).toContain("label=stream-agent");
+    expect(result.stderr).toContain("prompt=stream prompt");
+    expect(result.stderr).toContain("run:completed");
+  });
+
+  test("workflow-events --follow streams JSONL events until terminal status", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const runId = "wf_followprobe";
+    const runRoot = join(projectRoot, ".agent-workflow-kit", "runs", runId);
+    const transcriptDir = join(runRoot, "transcripts");
+    mkdirSync(transcriptDir, { recursive: true });
+    const artifacts = {
+      root: runRoot,
+      runJson: join(runRoot, "run.json"),
+      eventsJsonl: join(runRoot, "events.jsonl"),
+      transcriptDir,
+    };
+    writeFileSync(artifacts.runJson, `${JSON.stringify({
+      runId,
+      name: "follow-probe",
+      status: "running",
+      artifacts,
+    }, null, 2)}\n`);
+    writeFileSync(artifacts.eventsJsonl, `${JSON.stringify({ runId, type: "run:started", timestamp: "2026-06-03T00:00:00.000Z" })}\n`);
+
+    setTimeout(() => {
+      appendFileSync(artifacts.eventsJsonl, `${JSON.stringify({ runId, type: "log", message: "halfway", timestamp: "2026-06-03T00:00:00.050Z" })}\n`);
+      appendFileSync(artifacts.eventsJsonl, `${JSON.stringify({ runId, type: "run:completed", result: { ok: true }, timestamp: "2026-06-03T00:00:00.100Z" })}\n`);
+      writeFileSync(artifacts.runJson, `${JSON.stringify({
+        runId,
+        name: "follow-probe",
+        status: "completed",
+        artifacts,
+        result: { ok: true },
+      }, null, 2)}\n`);
+    }, 30);
+
+    const result = await runCli(["workflow-events", runId, "--follow", "--project-root", projectRoot, "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    expect(events).toEqual([
+      expect.objectContaining({ runId, type: "run:started" }),
+      expect.objectContaining({ runId, type: "log", message: "halfway" }),
+      expect.objectContaining({ runId, type: "run:completed" }),
+    ]);
   });
 
   test("lists persisted workflows without transcript spam", async () => {
@@ -490,6 +566,7 @@ export default function ({ phase }) {
 
     for (const mode of ["plan", "dontAsk"]) {
       const denied = await runCli(["workflow-run", "no-write-probe", "--permission-mode", mode, "--project-root", projectRoot, "--json"]);
+      expect(denied.exitCode).toBe(1);
       expect(JSON.parse(denied.stdout).status).toBe("failed");
     }
 
@@ -504,7 +581,7 @@ export default function ({ phase }) {
 
     // A failed run (denied) must show its error in non-JSON output.
     const failed = await runCli(["workflow-run", "no-write-probe", "--permission-mode", "dontAsk", "--project-root", projectRoot]);
-    expect(failed.exitCode).toBe(0);
+    expect(failed.exitCode).toBe(1);
     expect(failed.stdout).toContain("error:");
     expect(failed.stdout).toContain("denied");
 
@@ -627,7 +704,7 @@ export default async function ({ agent }) {
 
     const result = await runCli(["workflow-run", "limit-probe", "--max-agent-calls", "1", "--project-root", projectRoot, "--json"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     const payload = JSON.parse(result.stdout);
     expect(payload.status).toBe("failed");
     expect(payload.error).toContain("Agent call limit exceeded");
@@ -649,7 +726,7 @@ export default async function ({ agent }) {
       "--json",
     ]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     const payload = JSON.parse(result.stdout);
     expect(payload.status).toBe("failed");
     expect(payload.error).toContain("Estimated token limit exceeded");
@@ -678,7 +755,7 @@ export default async function ({ workflow }) {
       "--json",
     ]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     const payload = JSON.parse(result.stdout);
     expect(payload.status).toBe("failed");
     expect(payload.error).toContain("Child workflow depth limit exceeded");

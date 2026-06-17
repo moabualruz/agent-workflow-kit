@@ -17,6 +17,7 @@ export class SchemaValidationError extends Error {
 // Bounded retries when a schema-constrained agent returns a non-conforming
 // result, mirroring Claude's "model retries on mismatch at the tool-call layer".
 const MAX_SCHEMA_RETRIES = 2;
+const DEFAULT_AGENT_HEARTBEAT_MS = 60_000;
 
 export type RunOptions = {
   // Resume from a prior run: the longest unchanged prefix of agent() calls
@@ -124,6 +125,8 @@ export type WorkflowRuntimeOptions = {
   // Output-token estimate for a completed agent() call. Adapters that report
   // real usage should supply this; otherwise a length-based estimate is used.
   estimateTokens?: (prompt: string, result: unknown) => number;
+  // Low-rate progress event while a live agent call is still running. null or 0 disables it.
+  agentHeartbeatMs?: number | null | undefined;
   executionLimits?: AgentExecutionLimits | undefined;
   resolveWorkflow?: (request: WorkflowInvocation, args?: WorkflowArgs) => Promise<ResolvedWorkflowInvocation>;
 };
@@ -297,12 +300,14 @@ function createContext(
           return cached.result;
         }
 
-        options.store.append(withModel({ runId, type: "agent:start", index, key, seq, prompt, ...meta }, model));
+        const startEvent = withModel({ runId, type: "agent:start", index, key, seq, prompt, ...meta }, model);
+        options.store.append(startEvent);
 
         // Accumulate this call's spend across all generations (incl. schema
         // retries) so the total can be journaled on agent:done and re-applied on a
         // future resume's cache hit.
         let callTokens = 0;
+        const heartbeat = startAgentHeartbeat(options, startEvent, model);
         try {
           const result = await runAgentWithSchema(options, prompt, agentOptions, model, {
             onRetry: (errors, attempt) => {
@@ -345,6 +350,8 @@ function createContext(
           });
           options.store.append(withModel({ runId, type: "agent:done", index, key, seq, prompt, error: message, ...(transcriptPath ? { transcriptPath } : {}), ...meta }, model));
           throw error;
+        } finally {
+          if (heartbeat) clearInterval(heartbeat);
         }
       });
     } catch (error) {
@@ -581,6 +588,34 @@ function withModel(event: WorkflowEvent, resolution: ModelResolution | undefined
     model: resolution.model,
     ...(resolution.requestedModel ? { requestedModel: resolution.requestedModel } : {}),
   };
+}
+
+function startAgentHeartbeat(
+  options: WorkflowRuntimeOptions,
+  startEvent: WorkflowEvent,
+  resolution: ModelResolution | undefined,
+): ReturnType<typeof setInterval> | undefined {
+  const intervalMs = options.agentHeartbeatMs === undefined ? DEFAULT_AGENT_HEARTBEAT_MS : options.agentHeartbeatMs;
+  if (intervalMs === null || intervalMs <= 0) return undefined;
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    const elapsedSeconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
+    options.store.append(withModel({
+      runId: startEvent.runId,
+      type: "agent:heartbeat",
+      ...(startEvent.index !== undefined ? { index: startEvent.index } : {}),
+      ...(startEvent.key !== undefined ? { key: startEvent.key } : {}),
+      ...(startEvent.seq !== undefined ? { seq: startEvent.seq } : {}),
+      ...(startEvent.prompt !== undefined ? { prompt: startEvent.prompt } : {}),
+      ...(startEvent.group !== undefined ? { group: startEvent.group } : {}),
+      ...(startEvent.label !== undefined ? { label: startEvent.label } : {}),
+      ...(startEvent.agentType !== undefined ? { agentType: startEvent.agentType } : {}),
+      message: `still running after ${elapsedSeconds}s`,
+    }, resolution));
+  }, intervalMs);
+  const maybeUnref = timer as ReturnType<typeof setInterval> & { unref?: () => void };
+  maybeUnref.unref?.();
+  return timer;
 }
 
 function permissionRequestFor(request: RunRequest) {

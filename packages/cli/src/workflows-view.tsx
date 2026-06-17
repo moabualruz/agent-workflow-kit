@@ -17,7 +17,7 @@ export function formatHuman(value: unknown): string {
   }
 
   if (isRecord(value) && "type" in value && "runId" in value) {
-    return formatEvent(value as Record<string, unknown>);
+    return formatEventLine(value as Record<string, unknown>);
   }
 
   if (isUltracodeResult(value)) {
@@ -114,12 +114,25 @@ function enabledActionIds(actions: Array<{ id: string; enabled: boolean }>): str
   return actions.filter((action) => action.enabled).map((action) => action.id);
 }
 
-function formatEvent(event: Record<string, unknown>): string {
+export function formatEventLine(event: Record<string, unknown>): string {
   const head = [event.index !== undefined ? `#${event.index}` : undefined, event.type]
     .filter(Boolean)
     .join(" ");
-  const detail = event.title ?? event.message ?? event.error ?? event.model;
-  return detail ? `${head} ${detail}` : head;
+  const details = [
+    typeof event.title === "string" ? event.title : undefined,
+    typeof event.kind === "string" ? `kind=${event.kind}` : undefined,
+    typeof event.group === "string" ? `phase=${event.group}` : undefined,
+    typeof event.label === "string" ? `label=${event.label}` : undefined,
+    typeof event.agentType === "string" ? `agent=${event.agentType}` : undefined,
+    typeof event.model === "string" ? `model=${event.model}` : undefined,
+    typeof event.message === "string" ? event.message : undefined,
+    typeof event.error === "string" ? `error=${event.error}` : undefined,
+    typeof event.prompt === "string" ? `prompt=${summarize(event.prompt)}` : undefined,
+    event.result !== undefined ? `result=${summarize(event.result)}` : undefined,
+    typeof event.tokens === "number" ? `tokens=${event.tokens}` : undefined,
+    typeof event.transcriptPath === "string" ? `transcript=${event.transcriptPath}` : undefined,
+  ].filter(Boolean);
+  return details.length > 0 ? `${head} ${details.join(" | ")}` : head;
 }
 
 function summarize(value: unknown): string {
