@@ -797,6 +797,24 @@ export default async function ({ agent }) {
     expect(result.stderr).toContain("--agent-timeout-ms requires --real-agents");
   });
 
+  test("--default-agent-type fails fast without --real-agents", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const result = await runCli(["workflow-run", "no-write-probe", "--default-agent-type", "codex", "--project-root", projectRoot, "--json"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--default-agent-type requires --real-agents");
+  });
+
+  test("AGENT_WORKFLOW_KIT_DEFAULT_AGENT_TYPE fails fast without --real-agents", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const result = await runCli(["workflow-run", "no-write-probe", "--project-root", projectRoot, "--json"], {
+      AGENT_WORKFLOW_KIT_DEFAULT_AGENT_TYPE: "codex",
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--default-agent-type requires --real-agents");
+  });
+
   test("throws when --agent-timeout-ms is set but --real-agents is absent, regardless of flag order", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);

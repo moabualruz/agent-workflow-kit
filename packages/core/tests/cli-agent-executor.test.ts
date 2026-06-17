@@ -46,6 +46,19 @@ describe("createCliAgentExecutor", () => {
     expect(captured[0]?.command.args).toEqual(["exec", "-m", "gpt-5.4"]);
   });
 
+  test("uses configured default agent type when agentType is omitted", async () => {
+    const captured: Captured[] = [];
+    const agent = createCliAgentExecutor({
+      defaultAgentType: "codex",
+      runCommand: fakeRunner({ status: 0, stdout: "codex output", stderr: "" }, captured),
+    });
+
+    await agent("review this", { model: "gpt-5.4" });
+
+    expect(captured[0]?.command.cmd).toBe("codex");
+    expect(captured[0]?.command.args).toEqual(["exec", "-m", "gpt-5.4"]);
+  });
+
   test("passes the model to claude via --model", async () => {
     const captured: Captured[] = [];
     const agent = createCliAgentExecutor({
