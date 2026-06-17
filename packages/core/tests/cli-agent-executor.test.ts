@@ -176,6 +176,19 @@ describe("createCliAgentExecutor", () => {
 
     await expect(agent("anything")).rejects.toThrow(/timed out after 1000ms/);
   });
+
+  test("default subprocess runner rejects promptly when the command times out", async () => {
+    const agent = createCliAgentExecutor({
+      timeoutMs: 50,
+      commandFor: () => ({
+        cmd: process.execPath,
+        args: ["-e", "setTimeout(() => {}, 5000)"],
+        promptViaStdin: true,
+      }),
+    });
+
+    await expect(agent("hang")).rejects.toThrow(/timed out after 50ms/);
+  });
 });
 
 describe("defaultCommandFor", () => {

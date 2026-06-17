@@ -40,7 +40,7 @@ export type CliAgentExecutorOptions = {
   timeoutMs?: number;
   // Override how an agentType maps to a CLI invocation. Defaults to claude/codex builders below.
   commandFor?: AgentTypeCommandBuilder;
-  // Injection seam for tests; defaults to a node:child_process.spawnSync runner.
+  // Injection seam for tests; defaults to an evented subprocess runner.
   runCommand?: RunCommand;
   // The agentType used when a workflow's agent() call omits one. Default "claude".
   defaultAgentType?: string;
@@ -73,6 +73,23 @@ export function defaultCommandFor(model: string | undefined, agentType: string):
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
+function killChildTree(child: import("node:child_process").ChildProcess, signal: NodeJS.Signals): void {
+  const pid = child.pid;
+  if (pid && process.platform !== "win32") {
+    try {
+      process.kill(-pid, signal);
+      return;
+    } catch {
+      // Fall back to the direct child below.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Best effort cleanup; the caller still settles the agent promise.
+  }
+}
+
 // Default subprocess runner. Resolved lazily so importing this module in a non-Node host (or a meta-only parse)
 // does not require node:child_process up front. Uses evented `spawn` (not `spawnSync`) so concurrent agent()
 // calls from parallel workflow branches do not block the event loop or serialize on each other.
@@ -82,7 +99,10 @@ function nodeRunCommand(command: CliCommand, prompt: string, timeoutMs: number):
   const argv = command.promptViaStdin ? command.args : [...command.args, prompt];
 
   return new Promise<CliCommandResult>((resolve, reject) => {
-    const child = spawn(command.cmd, argv, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command.cmd, argv, {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(process.platform !== "win32" ? { detached: true } : {}),
+    });
 
     let stdout = "";
     let stderr = "";
@@ -92,11 +112,12 @@ function nodeRunCommand(command: CliCommand, prompt: string, timeoutMs: number):
     // Distinguishes a timeout-triggered kill from an external/process kill so we can report the right error.
     let timedOut = false;
 
-    // Kill the child on timeout; reject is driven by the resulting "close" (or "error") event so we only settle once.
+    // Reject immediately on timeout. Waiting for "close" can hang forever if the CLI child ignores the signal.
     const timer = timeoutMs > 0
       ? setTimeout(() => {
           timedOut = true;
-          child.kill("SIGKILL");
+          killChildTree(child, "SIGKILL");
+          finish(() => reject(new Error(`cli-agent-executor: ${command.cmd} timed out after ${timeoutMs}ms`)));
         }, timeoutMs)
       : undefined;
 
@@ -113,7 +134,7 @@ function nodeRunCommand(command: CliCommand, prompt: string, timeoutMs: number):
     child.stdout?.on("data", (chunk: string) => {
       stdoutBytes += Buffer.byteLength(chunk, "utf8");
       if (stdoutBytes > MAX_OUTPUT_BYTES) {
-        child.kill("SIGKILL");
+        killChildTree(child, "SIGKILL");
         finish(() => reject(new Error(`cli-agent-executor: ${command.cmd} stdout exceeded ${MAX_OUTPUT_BYTES} bytes`)));
         return;
       }
@@ -123,7 +144,7 @@ function nodeRunCommand(command: CliCommand, prompt: string, timeoutMs: number):
     child.stderr?.on("data", (chunk: string) => {
       stderrBytes += Buffer.byteLength(chunk, "utf8");
       if (stderrBytes > MAX_OUTPUT_BYTES) {
-        child.kill("SIGKILL");
+        killChildTree(child, "SIGKILL");
         finish(() => reject(new Error(`cli-agent-executor: ${command.cmd} stderr exceeded ${MAX_OUTPUT_BYTES} bytes`)));
         return;
       }
