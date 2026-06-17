@@ -124,7 +124,7 @@ export function formatEventLine(event: Record<string, unknown>): string {
     typeof event.group === "string" ? `phase=${event.group}` : undefined,
     typeof event.label === "string" ? `label=${event.label}` : undefined,
     typeof event.agentType === "string" ? `agent=${event.agentType}` : undefined,
-    typeof event.model === "string" ? `model=${event.model}` : undefined,
+    modelDetail(event),
     typeof event.message === "string" ? event.message : undefined,
     typeof event.error === "string" ? `error=${event.error}` : undefined,
     typeof event.prompt === "string" ? `prompt=${summarize(event.prompt)}` : undefined,
@@ -133,6 +133,17 @@ export function formatEventLine(event: Record<string, unknown>): string {
     typeof event.transcriptPath === "string" ? `transcript=${event.transcriptPath}` : undefined,
   ].filter(Boolean);
   return details.length > 0 ? `${head} ${details.join(" | ")}` : head;
+}
+
+const LOGICAL_MODEL_TIERS = new Set(["fable", "opus", "sonnet", "haiku"]);
+
+function modelDetail(event: Record<string, unknown>): string | undefined {
+  if (typeof event.model !== "string" || !event.model) return undefined;
+  const key = LOGICAL_MODEL_TIERS.has(event.model.toLowerCase()) ? "tier" : "model";
+  if (typeof event.requestedModel === "string" && event.requestedModel && event.requestedModel !== event.model) {
+    return `${key}=${event.model} requested=${event.requestedModel}`;
+  }
+  return `${key}=${event.model}`;
 }
 
 function summarize(value: unknown): string {
