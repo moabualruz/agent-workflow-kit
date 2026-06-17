@@ -47,6 +47,7 @@ export type CliAgentExecutorOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS = 600_000;
+const LOGICAL_MODEL_TIERS = new Set(["fable", "opus", "sonnet", "haiku"]);
 
 // claude -p "<prompt>" [--model <model>]: non-interactive print mode. Prompt passed via stdin to avoid argv
 // length limits + shell quoting hazards on long orchestration prompts.
@@ -65,10 +66,23 @@ function codexCommand(model: string | undefined): CliCommand {
 
 export function defaultCommandFor(model: string | undefined, agentType: string): CliCommand {
   const type = (agentType || "claude").trim().toLowerCase();
-  if (type === "codex") return codexCommand(model);
+  if (type === "codex") return codexCommand(modelForAgentType(model, type));
   // Default + explicit "claude": route to Claude. Unknown agentTypes fall through to Claude so a workflow
   // naming a host-specific subagent type still runs SOMETHING real rather than silently stubbing.
   return claudeCommand(model);
+}
+
+function modelForAgentType(model: string | undefined, agentType: string): string | undefined {
+  if (!model) return undefined;
+  const normalized = model.trim().toLowerCase();
+  if (
+    agentType === "codex" &&
+    LOGICAL_MODEL_TIERS.has(normalized) &&
+    process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS !== "1"
+  ) {
+    return undefined;
+  }
+  return model;
 }
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;

@@ -46,6 +46,36 @@ describe("createCliAgentExecutor", () => {
     expect(captured[0]?.command.args).toEqual(["exec", "-m", "gpt-5.4"]);
   });
 
+  test("omits Claude-style logical tier names when routing to codex by default", async () => {
+    const captured: Captured[] = [];
+    const agent = createCliAgentExecutor({
+      runCommand: fakeRunner({ status: 0, stdout: "codex output", stderr: "" }, captured),
+    });
+
+    await agent("triage", { agentType: "codex", model: "sonnet" });
+
+    expect(captured[0]?.command.cmd).toBe("codex");
+    expect(captured[0]?.command.args).toEqual(["exec"]);
+  });
+
+  test("can pass logical tier names to codex when explicitly enabled", async () => {
+    const previous = process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS;
+    process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS = "1";
+    try {
+      const captured: Captured[] = [];
+      const agent = createCliAgentExecutor({
+        runCommand: fakeRunner({ status: 0, stdout: "codex output", stderr: "" }, captured),
+      });
+
+      await agent("triage", { agentType: "codex", model: "sonnet" });
+
+      expect(captured[0]?.command.args).toEqual(["exec", "-m", "sonnet"]);
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS;
+      else process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS = previous;
+    }
+  });
+
   test("uses configured default agent type when agentType is omitted", async () => {
     const captured: Captured[] = [];
     const agent = createCliAgentExecutor({
