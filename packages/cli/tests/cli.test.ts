@@ -847,6 +847,42 @@ export default async function ({ agent }) {
     expect(result.stderr).toContain("--default-agent-type requires --real-agents");
   });
 
+  test("workflow-run exposes real agent settings to child workflow code", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    mkdirSync(workflowsRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "env-probe.js"), `
+export default function () {
+  return {
+    realAgents: process.env.AGENT_WORKFLOW_KIT_REAL_AGENTS,
+    defaultAgentType: process.env.AGENT_WORKFLOW_KIT_DEFAULT_AGENT_TYPE,
+    agentTimeoutMs: process.env.AGENT_WORKFLOW_KIT_AGENT_TIMEOUT_MS,
+  };
+}
+`);
+
+    const result = await runCli([
+      "workflow-run",
+      "env-probe",
+      "--real-agents",
+      "--default-agent-type",
+      "codex",
+      "--agent-timeout-ms",
+      "1234",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).result).toEqual({
+      realAgents: "1",
+      defaultAgentType: "codex",
+      agentTimeoutMs: "1234",
+    });
+  });
+
   test("AGENT_WORKFLOW_KIT_DEFAULT_AGENT_TYPE fails fast without --real-agents", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
     roots.push(projectRoot);

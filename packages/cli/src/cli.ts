@@ -56,6 +56,9 @@ main(process.argv.slice(2)).catch((error) => {
 
 async function main(argv: string[]) {
   const args = parseArgs(argv);
+  if (args.realAgents) process.env.AGENT_WORKFLOW_KIT_REAL_AGENTS = "1";
+  if (args.defaultAgentType) process.env.AGENT_WORKFLOW_KIT_DEFAULT_AGENT_TYPE = args.defaultAgentType;
+  if (args.agentTimeoutMs !== undefined) process.env.AGENT_WORKFLOW_KIT_AGENT_TIMEOUT_MS = String(args.agentTimeoutMs);
   const service = createWorkflowCommandService({
     projectRoot: args.projectRoot,
     // Default (no --real-agents): omit `agent`, so the command service falls back to schemaDefaultAgent (the
