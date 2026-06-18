@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -671,6 +671,48 @@ export default async function ({ agent }) {
     const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
     expect(events).toContain("\"requestedModel\":\"sonnet\"");
     expect(events).toContain("\"model\":\"provider/balanced-worker\"");
+  });
+
+  test("default codex agent type maps logical tiers to a codex model", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "awk-cli-"));
+    roots.push(projectRoot);
+    const workflowsRoot = join(projectRoot, ".agent-workflow-kit", "workflows");
+    const binRoot = join(projectRoot, "bin");
+    const argvPath = join(projectRoot, "codex-argv.txt");
+    mkdirSync(workflowsRoot, { recursive: true });
+    mkdirSync(binRoot, { recursive: true });
+    writeFileSync(join(workflowsRoot, "codex-default-alias.js"), `
+export default async function ({ agent }) {
+  return agent("model probe", { model: "sonnet" });
+}
+`);
+    writeFileSync(join(binRoot, "codex"), [
+      "#!/bin/sh",
+      `printf '%s\\n' "$@" > ${JSON.stringify(argvPath)}`,
+      "cat >/dev/null",
+      "printf 'fake codex response\\n'",
+    ].join("\n"));
+    chmodSync(join(binRoot, "codex"), 0o755);
+
+    const result = await runCli([
+      "workflow-run",
+      "codex-default-alias",
+      "--real-agents",
+      "--default-agent-type",
+      "codex",
+      "--project-root",
+      projectRoot,
+      "--json",
+    ], {
+      PATH: `${binRoot}:${process.env.PATH ?? ""}`,
+    });
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
+    expect(events).toContain("\"requestedModel\":\"sonnet\"");
+    expect(events).toContain("\"model\":\"gpt-5.5\"");
+    expect(readFileSync(argvPath, "utf8")).toBe("exec\n-m\ngpt-5.5\n");
   });
 
   test("--token-budget reaches the workflow budget as an informational target", async () => {

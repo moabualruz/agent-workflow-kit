@@ -1,4 +1,5 @@
 import type { AgentFunction, AgentOptions } from "./domain";
+import { CODEX_LOGICAL_MODEL_TIERS, defaultCodexModelAliases } from "./model-policy";
 import { schemaDefaultAgent } from "./schema-default-agent";
 
 // The agent-workflow-kit CLI historically injected `schemaDefaultAgent` as `options.agent`, which returns
@@ -47,7 +48,7 @@ export type CliAgentExecutorOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS = 600_000;
-const LOGICAL_MODEL_TIERS = new Set(["fable", "opus", "sonnet", "haiku"]);
+const LOGICAL_MODEL_TIERS = new Set<string>(CODEX_LOGICAL_MODEL_TIERS);
 
 // claude -p "<prompt>" [--model <model>]: non-interactive print mode. Prompt passed via stdin to avoid argv
 // length limits + shell quoting hazards on long orchestration prompts.
@@ -80,7 +81,7 @@ function modelForAgentType(model: string | undefined, agentType: string): string
     LOGICAL_MODEL_TIERS.has(normalized) &&
     process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS !== "1"
   ) {
-    return undefined;
+    return defaultCodexModelAliases()[normalized];
   }
   return model;
 }

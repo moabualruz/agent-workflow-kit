@@ -4,6 +4,7 @@ import { watch, type FSWatcher } from "node:fs";
 import {
   createAliasModelPolicy,
   createCliAgentExecutor,
+  defaultCodexModelAliases,
   createWorkflowCommandService,
   dispatchWorkflowCommand,
   findWorkflowCommandSpec,
@@ -299,7 +300,11 @@ function parseArgs(argv: string[]): ParsedArgs {
     throw new Error("--default-agent-type requires --real-agents");
   }
 
-  return { command, positional, projectRoot, json, argsJson, modelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, follow, stream, realAgents, agentTimeoutMs, defaultAgentType };
+  const resolvedModelAliases = defaultAgentType?.trim().toLowerCase() === "codex"
+    ? { ...defaultCodexModelAliases(), ...modelAliases }
+    : modelAliases;
+
+  return { command, positional, projectRoot, json, argsJson, modelAliases: resolvedModelAliases, permissionMode, sessionModel, tokenBudget, resumeFromRunId, disableWorkflows, maxAgentCalls, maxConcurrentAgents, maxChildWorkflowDepth, maxEstimatedTokens, stopOnEstimatedTokenLimit, tree, watch, follow, stream, realAgents, agentTimeoutMs, defaultAgentType };
 }
 
 function parsePositiveInteger(value: string, flag: string): number {

@@ -7,6 +7,14 @@ export type ModelPolicy = {
   resolveModel: (model: string) => ModelResolution;
 };
 
+export const CODEX_LOGICAL_MODEL_TIERS = ["fable", "opus", "sonnet", "haiku"] as const;
+const DEFAULT_CODEX_LOGICAL_MODEL = "gpt-5.5";
+
+export function defaultCodexModelAliases(): Record<string, string> {
+  const model = process.env.AGENT_WORKFLOW_KIT_CODEX_LOGICAL_MODEL?.trim() || DEFAULT_CODEX_LOGICAL_MODEL;
+  return Object.fromEntries(CODEX_LOGICAL_MODEL_TIERS.map((tier) => [tier, model]));
+}
+
 export function createAliasModelPolicy(aliases: Record<string, string>): ModelPolicy {
   return {
     resolveModel(model: string): ModelResolution {
