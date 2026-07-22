@@ -711,8 +711,8 @@ export default async function ({ agent }) {
     const payload = JSON.parse(result.stdout);
     const events = readFileSync(payload.artifacts.eventsJsonl, "utf8");
     expect(events).toContain("\"requestedModel\":\"sonnet\"");
-    expect(events).toContain("\"model\":\"gpt-5.5\"");
-    expect(readFileSync(argvPath, "utf8")).toBe("exec\n-m\ngpt-5.5\n");
+    expect(events).toContain("\"model\":\"gpt-5.6-terra\"");
+    expect(readFileSync(argvPath, "utf8")).toBe("exec\n-c\nmodel_reasoning_effort=\"high\"\n-m\ngpt-5.6-terra\n");
   });
 
   test("--token-budget reaches the workflow budget as an informational target", async () => {

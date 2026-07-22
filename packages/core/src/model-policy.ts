@@ -8,11 +8,19 @@ export type ModelPolicy = {
 };
 
 export const CODEX_LOGICAL_MODEL_TIERS = ["fable", "opus", "sonnet", "haiku"] as const;
-const DEFAULT_CODEX_LOGICAL_MODEL = "gpt-5.5";
+const DEFAULT_CODEX_LOGICAL_MODEL_ALIASES = {
+  fable: "gpt-5.6-sol",
+  opus: "gpt-5.6-sol",
+  sonnet: "gpt-5.6-terra",
+  haiku: "gpt-5.6-luna",
+};
 
 export function defaultCodexModelAliases(): Record<string, string> {
-  const model = process.env.AGENT_WORKFLOW_KIT_CODEX_LOGICAL_MODEL?.trim() || DEFAULT_CODEX_LOGICAL_MODEL;
-  return Object.fromEntries(CODEX_LOGICAL_MODEL_TIERS.map((tier) => [tier, model]));
+  // Retain the one-value override for existing callers while making the default
+  // routing match the logical quality and cost tiers.
+  const model = process.env.AGENT_WORKFLOW_KIT_CODEX_LOGICAL_MODEL?.trim();
+  if (model) return Object.fromEntries(CODEX_LOGICAL_MODEL_TIERS.map((tier) => [tier, model]));
+  return { ...DEFAULT_CODEX_LOGICAL_MODEL_ALIASES };
 }
 
 export function createAliasModelPolicy(aliases: Record<string, string>): ModelPolicy {

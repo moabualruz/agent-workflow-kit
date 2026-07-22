@@ -55,7 +55,7 @@ describe("createCliAgentExecutor", () => {
     await agent("triage", { agentType: "codex", model: "sonnet" });
 
     expect(captured[0]?.command.cmd).toBe("codex");
-    expect(captured[0]?.command.args).toEqual(["exec", "-m", "gpt-5.5"]);
+    expect(captured[0]?.command.args).toEqual(["exec", "-c", "model_reasoning_effort=\"high\"", "-m", "gpt-5.6-terra"]);
   });
 
   test("can override the default codex logical tier model", async () => {
@@ -69,11 +69,33 @@ describe("createCliAgentExecutor", () => {
 
       await agent("triage", { agentType: "codex", model: "sonnet" });
 
-      expect(captured[0]?.command.args).toEqual(["exec", "-m", "provider/codex-balanced"]);
+      expect(captured[0]?.command.args).toEqual(["exec", "-c", "model_reasoning_effort=\"high\"", "-m", "provider/codex-balanced"]);
     } finally {
       if (previous === undefined) delete process.env.AGENT_WORKFLOW_KIT_CODEX_LOGICAL_MODEL;
       else process.env.AGENT_WORKFLOW_KIT_CODEX_LOGICAL_MODEL = previous;
     }
+  });
+
+  test("preserves the logical tier to select Codex reasoning effort", async () => {
+    const captured: Captured[] = [];
+    const agent = createCliAgentExecutor({
+      runCommand: fakeRunner({ status: 0, stdout: "codex output", stderr: "" }, captured),
+    });
+
+    await agent("judge this", { agentType: "codex", model: "gpt-5.6-sol", requestedModel: "fable" });
+
+    expect(captured[0]?.command.args).toEqual(["exec", "-c", "model_reasoning_effort=\"xhigh\"", "-m", "gpt-5.6-sol"]);
+  });
+
+  test("honors an explicit Codex reasoning effort", async () => {
+    const captured: Captured[] = [];
+    const agent = createCliAgentExecutor({
+      runCommand: fakeRunner({ status: 0, stdout: "codex output", stderr: "" }, captured),
+    });
+
+    await agent("inspect", { agentType: "codex", model: "gpt-5.6-luna", effort: "low" });
+
+    expect(captured[0]?.command.args).toEqual(["exec", "-c", "model_reasoning_effort=\"low\"", "-m", "gpt-5.6-luna"]);
   });
 
   test("can pass logical tier names to codex when explicitly enabled", async () => {
@@ -87,7 +109,7 @@ describe("createCliAgentExecutor", () => {
 
       await agent("triage", { agentType: "codex", model: "sonnet" });
 
-      expect(captured[0]?.command.args).toEqual(["exec", "-m", "sonnet"]);
+      expect(captured[0]?.command.args).toEqual(["exec", "-c", "model_reasoning_effort=\"high\"", "-m", "sonnet"]);
     } finally {
       if (previous === undefined) delete process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS;
       else process.env.AGENT_WORKFLOW_KIT_PASS_LOGICAL_MODELS = previous;

@@ -59,6 +59,11 @@ export type AgentFunction = (prompt: string, options?: AgentOptions) => Promise<
 
 export type AgentOptions = {
   model?: string;
+  // The logical model name before the runtime resolves a harness-native alias.
+  // Adapters use it for policy such as Codex reasoning-effort selection.
+  requestedModel?: string;
+  // Harness-native reasoning effort. Adapters that do not support it ignore it.
+  effort?: string;
   // When set, the result is validated against this JSON Schema and the call is
   // retried on mismatch (StructuredOutput contract).
   schema?: unknown;

@@ -534,6 +534,7 @@ function withResolvedModel(
   return {
     ...agentOptions,
     model: resolution.model,
+    ...(resolution.requestedModel ? { requestedModel: resolution.requestedModel } : {}),
   };
 }
 

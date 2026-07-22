@@ -31,7 +31,7 @@ export type CliCommandResult = {
 
 export type RunCommand = (command: CliCommand, prompt: string, timeoutMs: number) => Promise<CliCommandResult>;
 
-export type AgentTypeCommandBuilder = (model: string | undefined, agentType: string) => CliCommand;
+export type AgentTypeCommandBuilder = (model: string | undefined, agentType: string, effort?: string) => CliCommand;
 
 export type CliAgentExecutorOptions = {
   // When true, return schemaDefaultAgent stubs instead of shelling to a model. Preserves the legacy CLI
@@ -59,18 +59,29 @@ function claudeCommand(model: string | undefined): CliCommand {
 }
 
 // codex exec "<prompt>" [-m <model>]: non-interactive exec mode. Prompt via stdin for the same reasons.
-function codexCommand(model: string | undefined): CliCommand {
+function codexCommand(model: string | undefined, effort?: string): CliCommand {
   const args = ["exec"];
+  if (effort) args.push("-c", `model_reasoning_effort=\"${effort}\"`);
   if (model) args.push("-m", model);
   return { cmd: "codex", args, promptViaStdin: true };
 }
 
-export function defaultCommandFor(model: string | undefined, agentType: string): CliCommand {
+export function defaultCommandFor(model: string | undefined, agentType: string, effort?: string): CliCommand {
   const type = (agentType || "claude").trim().toLowerCase();
-  if (type === "codex") return codexCommand(modelForAgentType(model, type));
+  if (type === "codex") return codexCommand(modelForAgentType(model, type), effort);
   // Default + explicit "claude": route to Claude. Unknown agentTypes fall through to Claude so a workflow
   // naming a host-specific subagent type still runs SOMETHING real rather than silently stubbing.
   return claudeCommand(model);
+}
+
+function defaultCodexEffort(model: string | undefined): string | undefined {
+  switch (String(model || "").trim().toLowerCase()) {
+    case "fable": return "xhigh";
+    case "opus": return "high";
+    case "sonnet": return "high";
+    case "haiku": return "medium";
+    default: return undefined;
+  }
 }
 
 function modelForAgentType(model: string | undefined, agentType: string): string | undefined {
@@ -301,7 +312,8 @@ export function createCliAgentExecutor(options: CliAgentExecutorOptions = {}): A
   return async (prompt: string, agentOptions?: AgentOptions): Promise<unknown> => {
     const schema = agentOptions?.schema;
     const agentType = agentOptions?.agentType ?? defaultAgentType;
-    const command = commandFor(agentOptions?.model, agentType);
+    const effort = agentOptions?.effort ?? (agentType === "codex" ? defaultCodexEffort(agentOptions?.requestedModel ?? agentOptions?.model) : undefined);
+    const command = commandFor(agentOptions?.model, agentType, effort);
     const fullPrompt = schema ? withSchemaInstruction(prompt, schema) : prompt;
 
     const result = await runCommand(command, fullPrompt, timeoutMs);
