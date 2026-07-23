@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createFileStore,
+  createAliasModelPolicy,
   createMemoryStore,
   createWorkflowRuntime,
   denyDynamicWorkflowPolicy,
@@ -309,6 +310,24 @@ describe("workflow runtime parity contract", () => {
       type: "agent:done",
       model: "harness/fast-worker",
     }));
+  });
+
+  test("logical model aliases provide a policy effort when the workflow omits one", async () => {
+    const store = createMemoryStore();
+    const seen: Array<{ model?: string; effort?: string }> = [];
+    const runtime = createWorkflowRuntime({
+      store,
+      modelPolicy: createAliasModelPolicy({ sonnet: "gpt-5.6-terra" }),
+      agent: async (_prompt, options) => {
+        seen.push({ model: options?.model, effort: options?.effort });
+        return {};
+      },
+    });
+
+    const run = await runtime.run({ name: "logical-effort", script: async ({ agent }) => agent("route", { model: "sonnet" }) });
+
+    expect(run.status).toBe("completed");
+    expect(seen).toEqual([{ model: "gpt-5.6-terra", effort: "high" }]);
   });
 
   test("pipeline runs items independently with no barrier: a slow item's late stage does not gate a fast item", async () => {

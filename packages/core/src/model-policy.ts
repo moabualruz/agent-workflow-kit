@@ -1,6 +1,7 @@
 export type ModelResolution = {
   model: string;
   requestedModel?: string;
+  effort?: string;
 };
 
 export type ModelPolicy = {
@@ -8,6 +9,12 @@ export type ModelPolicy = {
 };
 
 export const CODEX_LOGICAL_MODEL_TIERS = ["fable", "opus", "sonnet", "haiku"] as const;
+const LOGICAL_TIER_EFFORT: Record<string, string> = {
+  fable: "xhigh",
+  opus: "high",
+  sonnet: "high",
+  haiku: "medium",
+};
 const DEFAULT_CODEX_LOGICAL_MODEL_ALIASES = {
   fable: "gpt-5.6-sol",
   opus: "gpt-5.6-sol",
@@ -31,6 +38,7 @@ export function createAliasModelPolicy(aliases: Record<string, string>): ModelPo
       return {
         model: resolved,
         requestedModel: model,
+        ...(LOGICAL_TIER_EFFORT[model] ? { effort: LOGICAL_TIER_EFFORT[model] } : {}),
       };
     },
   };
