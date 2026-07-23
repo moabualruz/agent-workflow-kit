@@ -69,9 +69,8 @@ function codexCommand(model: string | undefined, effort?: string): CliCommand {
 export function defaultCommandFor(model: string | undefined, agentType: string, effort?: string): CliCommand {
   const type = (agentType || "claude").trim().toLowerCase();
   if (type === "codex") return codexCommand(modelForAgentType(model, type), effort);
-  // Default + explicit "claude": route to Claude. Unknown agentTypes fall through to Claude so a workflow
-  // naming a host-specific subagent type still runs SOMETHING real rather than silently stubbing.
-  return claudeCommand(model);
+  if (type === "claude") return claudeCommand(model);
+  throw new Error(`cli-agent-executor: unsupported agent type ${JSON.stringify(agentType)}; configure an explicit claude or codex route`);
 }
 
 function defaultCodexEffort(model: string | undefined): string | undefined {

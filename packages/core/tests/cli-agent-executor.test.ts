@@ -262,11 +262,10 @@ describe("createCliAgentExecutor", () => {
 });
 
 describe("defaultCommandFor", () => {
-  test("maps claude / codex / unknown agentTypes", () => {
+  test("maps only supported agentTypes", () => {
     expect(defaultCommandFor(undefined, "claude").cmd).toBe("claude");
     expect(defaultCommandFor(undefined, "codex").cmd).toBe("codex");
-    // Unknown agentType falls through to claude so the call still runs a real model.
-    expect(defaultCommandFor(undefined, "some-host-subagent").cmd).toBe("claude");
+    expect(() => defaultCommandFor(undefined, "some-host-subagent")).toThrow("unsupported agent type");
   });
 });
 
